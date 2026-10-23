@@ -1,0 +1,4 @@
+# refuzz minimize_golden v1
+# os=linux arch=amd64 mode=crash_snapshot call_index=0
+# call_count=1
+mmap(&(0x7f0000000000/0x1000)=nil, 0x1000, 0x0, 0x10, 0xffffffffffffffff, 0x0)

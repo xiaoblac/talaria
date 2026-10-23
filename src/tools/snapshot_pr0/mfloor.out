@@ -1,0 +1,24 @@
+[00:40:51] === e1_shinit_m2048 (mem=2048) ===
+[00:41:23]   [e1_shinit_m2048] boot=ok 
+[00:41:39] === e2_shinit_m1536 (mem=1536) ===
+[00:42:12]   [e2_shinit_m1536] boot=ok 
+[00:42:25] === e3_shinit_m1024 (mem=1024) ===
+[00:42:57]   [e3_shinit_m1024] boot=ok 
+[00:43:09] === e4_shinit_m768 (mem=768) ===
+[00:43:38]   [e4_shinit_m768] boot=fail Kernel panic
+[00:43:38] === e5_shinit_m1024_fewdev (mem=1024) ===
+[00:44:07]   [e5_shinit_m1024_fewdev] boot=ok 
+[00:44:19] === e6_shinit_m768_fewdev (mem=768) ===
+[00:44:48]   [e6_shinit_m768_fewdev] boot=ok 
+
+================ -m floor (executor-as-init) ================
+config                       mem     boot  snapMiB  savevm   restore med ms
+e1_shinit_m2048             2048       ok      703    2455 1742  [1987, 1707, 1709, 1761, 1742]
+e2_shinit_m1536             1536       ok      618    2039 1436  [1519, 1422, 1436, 1444, 1425]
+e3_shinit_m1024             1024       ok      541    1595 1262  [1362, 1276, 1262, 1251, 1230]
+e4_shinit_m768               768     fail        -       - boot fail: Kernel panic
+e5_shinit_m1024_fewdev      1024       ok      520    1592 1232  [1404, 1289, 1232, 1203, 1207]
+e6_shinit_m768_fewdev        768       ok      462    1632 1109  [1174, 1109, 1095, 1098, 1145]
+baseline (full boot m2048) = 831 MiB / 2267 ms   |  exec-as-init m2048 (§11 c2) = 702 MiB / 1731 ms
+syz quiet-VM target = 132-260 MiB / 150-275 ms
+=============================================================

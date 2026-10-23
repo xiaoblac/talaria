@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cov-compare — coverage over time</title>
+<style>
+  body { font-family: ui-monospace, monospace; background:#fafafa; color:#222; margin:18px; }
+  h1 { font-size:16px; margin:0 0 12px; }
+  .panels { display:flex; gap:24px; flex-wrap:wrap; }
+  .panel { background:#fff; border:1px solid #ddd; border-radius:6px; padding:10px 12px; }
+  .panel h2 { font-size:13px; margin:0 0 6px; font-weight:600; }
+  .note { color:#666; font-size:11px; margin-top:14px; max-width:1080px; line-height:1.4; }
+  .stale { color:#b00; }
+  canvas { display:block; }
+</style>
+</head>
+<body>
+<h1>cov-compare — coverage over time <span id="status" style="font-weight:400;color:#888;font-size:12px"></span></h1>
+<div class="panels" id="panels"></div>
+<div class="note">
+  Y = each tool's own distinct-PC metric (syzkaller corpus coverage vs reFuzz <code>unique</code>);
+  dedup/canonicalization may differ — compare shape/slope, not absolute equality.
+  Panels are <b>separate, auto-scaled</b> (left reFuzz, right syzkaller); the combined single-axes
+  two-line figure is the end-of-run matplotlib artifact, not shown here.
+</div>
+<script>
+const W = 540, H = 340, PADL = 70, PADR = 16, PADT = 16, PADB = 40;
+const COLORS = { 'refuzz-log': '#d62728', 'syz-bench': '#1f77b4' };
+
+// reFuzz left, syzkaller right, anything else in the middle.
+function order(series) {
+  const rank = s => (s.source === 'refuzz-log' ? 0 : s.source === 'syz-bench' ? 2 : 1);
+  return series.slice().sort((a, b) => rank(a) - rank(b));
+}
+
+function draw(cv, s) {
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  const pts = s.points || [];
+  let maxT = 0, maxY = 0;
+  for (const [t, y] of pts) { if (t > maxT) maxT = t; if (y > maxY) maxY = y; }
+  if (maxT <= 0) maxT = 1;
+  if (maxY <= 0) maxY = 1;
+  const X = t => PADL + (W - PADL - PADR) * (t / maxT);
+  const Y = v => H - PADB - (H - PADT - PADB) * (v / maxY);
+
+  // grid
+  ctx.strokeStyle = '#eee'; ctx.lineWidth = 1;
+  for (let i = 1; i <= 4; i++) {
+    const gy = Y(maxY * i / 4);
+    ctx.beginPath(); ctx.moveTo(PADL, gy); ctx.lineTo(W - PADR, gy); ctx.stroke();
+  }
+  // axes
+  ctx.strokeStyle = '#999';
+  ctx.beginPath(); ctx.moveTo(PADL, PADT); ctx.lineTo(PADL, H - PADB); ctx.lineTo(W - PADR, H - PADB); ctx.stroke();
+  // labels
+  ctx.fillStyle = '#666'; ctx.font = '11px monospace';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let i = 0; i <= 4; i++) ctx.fillText(Math.round(maxY * i / 4), PADL - 6, Y(maxY * i / 4));
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('0', X(0), H - PADB + 6);
+  ctx.fillText(Math.round(maxT) + 's', X(maxT), H - PADB + 6);
+  ctx.save(); ctx.translate(14, (PADT + H - PADB) / 2); ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#888';
+  ctx.fillText('distinct PC', 0, 0); ctx.restore();
+
+  // line
+  ctx.strokeStyle = COLORS[s.source] || '#2ca02c'; ctx.lineWidth = 2; ctx.beginPath();
+  pts.forEach(([t, v], i) => { const px = X(t), py = Y(v); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+  ctx.stroke();
+}
+
+async function tick() {
+  let data;
+  try {
+    const r = await fetch('/api/series', { cache: 'no-store' });
+    data = await r.json();
+    document.getElementById('status').textContent = '· live, updated ' + new Date().toLocaleTimeString();
+    document.getElementById('status').className = '';
+  } catch (e) {
+    document.getElementById('status').textContent = '· disconnected';
+    document.getElementById('status').className = 'stale';
+    return;
+  }
+  const root = document.getElementById('panels');
+  order(data.series || []).forEach(s => {
+    const id = s.label.replace(/[^a-zA-Z0-9_]/g, '_');
+    let panel = document.getElementById('panel_' + id);
+    if (!panel) {
+      panel = document.createElement('div'); panel.className = 'panel'; panel.id = 'panel_' + id;
+      const h = document.createElement('h2'); h.id = 'h_' + id;
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = H; cv.id = 'cv_' + id;
+      panel.appendChild(h); panel.appendChild(cv); root.appendChild(panel);
+    }
+    const pts = s.points || [];
+    const last = pts.length ? pts[pts.length - 1] : [0, 0];
+    document.getElementById('h_' + id).textContent =
+      s.label + '   PC=' + Math.round(last[1]) + '   @' + Math.round(last[0]) + 's   (' + pts.length + ' samples)';
+    draw(document.getElementById('cv_' + id), s);
+  });
+}
+tick();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

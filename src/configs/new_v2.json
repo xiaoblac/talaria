@@ -1,0 +1,229 @@
+{
+  "_about": "reFuzz config schema v2 (PROPOSAL). Clean re-layout of the v1 keys parsed by control/config_parser + control/startup/json_frontend. Goals: group by concept, unit-suffixed names, uniform across backends, dead keys removed. Any key starting with '_' is a comment and is ignored by the parser. This file is the KERNEL (qemu_ivshmem_linux) reference with every knob at its code default; real configs set only what they override.",
+
+  "profile": "kernel",
+
+  "target": {
+    "_comment": "execution semantics. WAS a flat 19-key block; now grouped into modes/capabilities/threading/debug.",
+    "modes": {
+      "_comment": "surface = WAS modes.execution; renamed so it doesn't collide with target.execution below. surface = what ABI/surface is driven: kernel_syscall | userspace_harness | binary_dbi.",
+      "surface": "kernel_syscall",
+      "coverage": "kcov",
+      "sanitizer": "none",
+      "sandbox": "none"
+    },
+    "capabilities": {
+    },
+    "execution": {
+      "_comment": "how the worker runs each program. 'mode' = scheduling strategy (serial|threaded). 'snapshot' is an ORTHOGONAL toggle (per-testcase VM reset) that combines with EITHER mode. WAS target.threading.intra_task_mode + qemu.snapshot_fuzzing.",
+      "mode": "serial",
+      "threaded": {
+        "_comment": "config for mode=threaded; ignored when mode=serial. mode=threaded requires thread_count>1.",
+        "thread_count": 1,
+        "kcov_collector_count": 8,
+        "kcov_premap_count": 3,
+        "per_call_timeout_ms": 50
+      },
+      "snapshot": {
+        "_comment": "orthogonal to mode: per-testcase VM savevm/loadvm reset (replaces v1 qemu.snapshot_fuzzing; resolver auto-selects the snapshot backend). enable=true works with serial OR threaded.",
+        "enable": false
+      }
+    },
+    "debug": {
+      "_comment": "diagnostics; all off in production. WAS debug_smaps / debug_empty_fork / ... (debug_ prefix dropped).",
+      "smaps": false,
+      "empty_fork": false,
+      "mount_timing": false,
+      "topology_probe": false,
+      "warmup_devices": false,
+      "metric_dump_path": ""
+    }
+  },
+
+  "session": {
+    "_comment": "this run's workspace + stop condition (merged session + run). work_dir='' -> /tmp. state_dir='' -> <work_dir>/state. keep_runs = newest run-*/ dirs kept at startup (older pruned by mtime, 0 = keep all); state/ (corpus/coverage/repros) never touched. WAS v1 retention/retention_max + phase1_run_limit_mode/phase1_runtime_seconds/phase1_total_tasks.",
+    "work_dir": "/workspace/talaria/run",
+    "state_dir": "",
+    "keep_runs": 3,
+    "limit_mode": "both",
+    "runtime_seconds": 20,
+    "total_tasks": 5000
+  },
+
+  "fuzzer": {
+    "_comment": "the fuzz loop. corpus moved out to its own top-level 'corpus' module.",
+    "high_watermark": 64,
+    "exec_timeout_ms": 5000,
+    "shutdown_grace_ms": 60000,
+    "mutator_policy": "syz_balanced",
+    "worker_log": { "enable": false },
+    "worker_perf": { "enable": false, "sample_rate": 1, "report_every": 256 }
+  },
+
+  "executor": {
+    "_comment": "dispatch module (channeldispatcher). Owns its loop tuning AND the channel it drives, so 'channel' is nested here. Flattened tuning: WAS submit_strategy.name / event_forward_strategy.blocking_timeout_ms / timeouts_ms.{poll,pop}; legacy aliases dropped.",
+    "idle_sleep_ms": 1000,
+    "event_blocking_timeout_ms": 1,
+    "submit_wait_for_slot_ms": 0,
+    "submit_strategy": "round_robin",
+    "poll_timeout_ms": 1,
+    "pop_timeout_ms": 5,
+
+    "channel": {
+      "_comment": "the SUT substrate + transport + liveness. backend_id selects which backend parser owns the 'backend' sub-block.",
+      "backend_id": "qemu_ivshmem_linux",
+      "worker_bin": "/workspace/talaria/build-llvm20/executor/channel/worker/ivshmem_worker",
+      "vm_id": 0,
+      "n_workers": 1,
+      "fuzz_channel_count": 1,
+      "wait_ready_timeout_ms": 60000,
+      "loop_interval_ms": 100,
+      "health_check_interval_ms": 500,
+      "pre_reboot_drain_ms": 5500,
+      "input_queue_capacity": 64,
+      "abnormal_console_snapshot_lines": 80,
+
+      "health": {
+        "_comment": "liveness detection + recovery policy (cross-backend concern).",
+        "enable": true,
+        "sample_interval_ms": 250,
+        "heartbeat_timeout_ms": 4000,
+        "heartbeat_miss_threshold": 0,
+        "workers_per_round": 0,
+        "vm_dead_timeout_ms": 30000,
+        "recovery_window_base_ms": 90000,
+        "recovery_window_cap_ms": 600000,
+        "cascade_window_ms": 120000,
+        "cascade_reboot_budget": 2
+      },
+
+      "backend": {
+        "_comment": "backend-specific launch+wire config. Shape depends on channel.backend_id. THIS block = qemu_ivshmem_linux. (xiuos/ch32 shapes shown in the chat message.)",
+        "vm": {
+          "arch": "amd64",
+          "image": "/workspace/images-test-linux5.14/bookworm.img",
+          "kernel": "/workspace/syzkaller/kernel/build-kasan/arch/x86/boot/bzImage",
+          "ssh_key": "/workspace/images-test-linux5.14/bookworm.id_rsa",
+          "ssh_user": "root",
+          "qemu": {
+            "_comment": "snapshot here = disk CoW overlay (-snapshot); NOT the snapshot execution mode (that moved to target.execution.mode=snapshot).",
+            "bin": "qemu-system-x86_64",
+            "cpu": 2,
+            "mem_mb": 2048,
+            "cmdline": "nokaslr panic=1 oops=panic",
+            "snapshot": true,
+            "serial_log_path": ""
+          }
+        },
+        "transport": {
+          "ivshmem_path": "/tmp/refuzz_ivshmem_phase1",
+          "ivshmem_mode": "plain",
+          "doorbell_socket_path": "/tmp/refuzz_ivshmem_phase1.sock",
+          "ivshmem_vectors": 1,
+          "wait_ready_poll_us": 1000,
+          "poll_sleep_us": 100
+        }
+      }
+    }
+  },
+
+  "corpus": {
+    "_comment": "standalone corpus module. Absorbs v1 fuzzer.corpus (capacity/max_drain) + persistence.corpus + persistence.crash_repros_as_seeds. The corpus owns its own persistence toggle.",
+    "capacity": 10000,
+    "max_drain": 32,
+    "crash_repros_as_seeds": true,
+    "persistence": {
+      "enable": true,
+      "dir": "",
+      "load_on_start": true
+    }
+  },
+
+  "coverage": {
+    "_comment": "coverage module owns its own persistence toggle (was the inverted persistence.coverage). DEAD keys removed: kcov.drain_seconds / persist_seconds / max_inbox_batches.",
+    "kcov": {
+      "raw_pc": true,
+      "max_pcs_per_exec": 0,
+      "sample_rate": 1.0,
+      "entries": 524288,
+      "output_dir": ""
+    },
+    "persistence": {
+      "_comment": "save/load the coverage.bin state across runs.",
+      "enable": true,
+      "path": "",
+      "load_on_start": true
+    },
+    "export": {
+      "_comment": "optional 10-second coverage metric logs for compare tooling.",
+      "enabled": false,
+      "corpus_pc_path": ""
+    }
+  },
+
+  "telemetry": {
+    "_comment": "host-side observability. logging lives HERE for all backends now (v1 xiuos read top-level 'logging').",
+    "policy_monitor": {
+      "min_dwell_seconds": 300,
+      "window_size": 10,
+      "stall_threshold": 0.01,
+      "required_windows": 3,
+      "degraded_channel_ratio": 0.5
+    },
+    "observability": { "pull_interval_ms": 1000 },
+    "dashboard": {
+      "enable": true,
+      "refresh_interval_ms": 500,
+      "max_events": 6,
+      "use_alternate_screen": true
+    },
+    "logging": {
+      "enable": true,
+      "stream": false,
+      "path": "",
+      "flush_interval_ms": 250,
+      "console_summary": true,
+      "hot_path_sample_rate": 0
+    }
+  },
+
+  "repro": {
+    "enable": false,
+    "dedicated_vm_count": 1,
+    "vmlinux_path": "/workspace/syzkaller/kernel/build-kasan/vmlinux",
+    "addr2line_binary": "addr2line",
+    "queue_capacity": 64,
+    "execute_timeout_ms": 30000
+  },
+
+  "wiring": {
+    "_comment": "OPTIONAL component-graph wiring (parsed by control/startup/json_frontend). Omit the whole block to use the profile's defaults (shown here for 'kernel'). feedback_engine here REPLACES the v1 top-level feedback_engine_spec and overrides components.feedback_engine.",
+    "components": {
+      "mutator_engine": "syz",
+      "scheduler_engine": "priority_scheduler",
+      "corpus_store": "in_memory",
+      "corpus_admission": "",
+      "feedback_engine": "kernel_kcov",
+      "channel_backend_id": "",
+      "target_toolkit": "kernel_linux_syz"
+    },
+    "feedback_engine": {
+      "engine_id": "kernel_kcov",
+      "signal_ids": ["kernel_kcov"],
+      "aggregator_id": "weighted_sum",
+      "aggregator_context": {
+        "signal_weights": { "kernel_kcov": 1.0 },
+        "interesting_threshold": 0.0
+      }
+    },
+    "stages": {
+      "stage_specs": {
+        "gen_p": { "type_id": "generate_producer",  "side": "producer", "state_scope": "gen_p", "params": { "generate_percent": "5" } },
+        "mut_p": { "type_id": "mutational_producer", "side": "producer", "state_scope": "mut_p" },
+        "mut_c": { "type_id": "mutational_consumer", "side": "consumer", "state_scope": "mut_c" }
+      },
+      "producer_chain": ["gen_p", "mut_p"],
+      "consumer_chain": ["mut_c"]
+    }
+  }
+}

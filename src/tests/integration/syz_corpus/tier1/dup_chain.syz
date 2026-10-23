@@ -1,0 +1,4 @@
+r0 = openat(0xffffffffffffff9c, &AUTO="./file1\x00", 0x42, 0x1ff)
+r1 = dup(r0)
+close(r0)
+close(r1)

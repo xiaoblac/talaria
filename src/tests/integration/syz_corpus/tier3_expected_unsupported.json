@@ -1,0 +1,6 @@
+[
+  "aggregate.nested",
+  "union.named_field_required",
+  "call.unknown_name",
+  "arg.unsupported_kind"
+]

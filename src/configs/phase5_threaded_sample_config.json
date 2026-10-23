@@ -1,0 +1,158 @@
+{
+  "_purpose_comment": "Epic 7 PR-4 ~ PR-6: thread_count > 1 + intra_task_mode=threaded 的 end-to-end 跑通 + Step 8 corpus regression。与 phase5_sample_config.json 保持字段和默认参数对齐；差异保留 target.thread_count / target.intra_task_mode / kcov_collector_count + ivshmem_path/doorbell_socket_path (并行起两 VM 时避免 IPC 冲突)。work_dir 和 baseline 共用 — 每次跑会自动生成 run-<timestamp>-<pid> 子目录隔离日志,state/corpus 共享让 threaded run 接上 baseline 的预热 corpus,避免冷启动污染对比。",
+  "_thread_count_comment": "[Epic 7 PR-4.5] worker 内逻辑线程池大小,范围 [1, 32]。1 = serial-only (历史行为,worker driver 走 fast path,KernelThreadPool 不构造)。>1 = 启用 threaded path。threaded+kcov 时 kcov_collector_count 是 opened KCOV fd 上限,可小于 thread_count;调度层按 syzkaller 语义拒绝超出 coverage slot 的并发需求。",
+  "_intra_task_mode_comment": "[Epic 7 PR-4.6] 全局执行模式。\"serial\" (default) = 所有 task wire flag = INTRA_SERIAL,等价 PR-1~PR-3 历史行为。\"threaded\" = channeldispatcher 给每个 outgoing task OR 上 TASK_FLAG_INTRA_THREADED,worker driver 走 ExecuteThreaded → KernelThreadPool 调度。要求 thread_count > 1,否则 config_parser fail-closed (worker 端会 return -1 把所有 task exec_error)。\nPre-flight 拒绝:任何含 non-concurrent-safe pseudo (mount-image / KVM / USB / 大多数 syz_* helper) 的 program 在 worker driver 入口被拒返 -1,不进 threaded path。这意味着 corpus 里 pseudo-heavy program 占比高时 throughput 可能 drop;Step 8 第一项要看的就是这个。",
+  "work_dir": "/workspace/talaria/run",
+  "retention": false,
+  "retention_max": 3,
+  "channel": {
+    "wait_ready_timeout_ms": 180000,
+    "loop_interval_ms": 100,
+    "health_check_interval_ms": 500,
+    "pre_reboot_drain_ms": 5500,
+    "input_queue_capacity": 64,
+    "abnormal_console_snapshot_lines": 80,
+    "vm": {
+      "arch": "amd64",
+      "image": "/workspace/images-test-linux5.14/bookworm.img",
+      "kernel": "/workspace/syzkaller/kernel/build-kasan/arch/x86/boot/bzImage",
+      "ssh_key": "/workspace/images-test-linux5.14/bookworm.id_rsa",
+      "ssh_user": "root",
+      "qemu": {
+        "cpu": 2,
+        "mem": 2048,
+        "cmdline": "nokaslr panic=1 oops=panic",
+        "snapshot": true
+      }
+    },
+    "transport": {
+      "n_workers": 1,
+      "ivshmem_path": "/tmp/refuzz_ivshmem_phase5_threaded",
+      "ivshmem_mode": "doorbell",
+      "doorbell_socket_path": "/tmp/refuzz_ivshmem_phase5_threaded.sock",
+      "ivshmem_vectors": 1,
+      "wait_ready_poll_us": 1000,
+      "poll_sleep_us": 100
+    },
+    "health": {
+      "enable": true,
+      "sample_interval_ms": 200,
+      "heartbeat_timeout_ms": 1500,
+      "workers_per_round": 0
+    }
+  },
+  "executor": {
+    "idle_sleep_us": 1000000,
+    "submit_wait_for_slot_ms": 0,
+    "submit_strategy": {
+      "name": "round_robin"
+    },
+    "event_forward_strategy": {
+      "blocking_timeout_ms": 1
+    },
+    "timeouts_ms": {
+      "poll": 1,
+      "pop": 5
+    }
+  },
+  "fuzzer": {
+    "high_watermark": 64,
+    "exec_timeout_ms": 5000,
+    "shutdown_grace_ms": 60000,
+    "worker_log": {
+      "enable": true
+    },
+    "worker_perf": {
+      "enable": true,
+      "sample_rate": 1,
+      "report_every": 128
+    },
+    "mutator_policy": "syz_balanced",
+    "corpus": {
+      "capacity": 10000,
+      "max_drain": 32
+    }
+  },
+  "telemetry": {
+    "policy_monitor": {
+      "min_dwell_seconds": 300,
+      "window_size": 10,
+      "stall_threshold": 0.01,
+      "required_windows": 3,
+      "degraded_channel_ratio": 0.5
+    },
+    "observability": {
+      "pull_interval_ms": 500
+    },
+    "dashboard": {
+      "enable": true,
+      "refresh_interval_ms": 500,
+      "max_events": 6,
+      "use_alternate_screen": true
+    },
+    "logging": {
+      "enable": true,
+      "stream": false,
+      "flush_interval_ms": 250,
+      "console_summary": true,
+      "hot_path_sample_rate": 0
+    }
+  },
+  "target": {
+    "execution_mode": "kernel_syscall",
+    "coverage_mode": "kcov",
+    "sanitizer_mode": "none",
+    "sandbox_mode": "none",
+    "debug_smaps": true,
+    "debug_empty_fork": false,
+    "thread_count": 32,
+    "intra_task_mode": "threaded",
+    "_kcov_pool_comment": "[当前版本 threaded-kcov-parity] thread_count=32 是 logical executor 上限;kcov_collector_count=8 对齐 syzkaller kCoverOptimizedCount opened KCOV fd 上限。如果需要 coverage 的线程没有 kcov fd,syzkaller 会 fail,reFuzz 调度层也不会静默无覆盖执行。kcov_premap_count=3 对齐 kCoverOptimizedPreMmap,其余 collector 首次 Begin 时 lazy mmap。",
+    "kcov_collector_count": 8,
+    "kcov_premap_count": 3,
+    "_per_call_timeout_comment": "[当前版本 per-call-timeout-config] threaded worker thread WaitCallDone 单条 syscall 超时(ms)。对齐 syzkaller upstream fuzz 路径:targets.go:857 Syscall=50ms (base) × QEMU slowdown=10 = 500ms。注意 executor.cc:1647 的 5000ms 是 stdio fallback (manager 未下发 RPC 时才用),之前的 5000ms 默认把 program tail latency 放大 10×。KASAN/KCSAN 等更慢的 slowdown 可上调;native (slowdown=1) 可降到 50。",
+    "per_call_timeout_ms": 500
+  },
+  "coverage": {
+    "kcov": {
+      "raw_pc": true,
+      "max_pcs_per_exec": 8192,
+      "sample_rate": 1.0,
+      "drain_seconds": 1,
+      "persist_seconds": 60,
+      "max_inbox_batches": 4096
+    },
+    "export": {
+      "enabled": true
+    }
+  },
+  "persistence": {
+    "corpus": {
+      "enable": true,
+      "load_on_start": true
+    },
+    "coverage": {
+      "enable": true,
+      "load_on_start": true
+    },
+    "crash_repros_as_seeds": false
+  },
+  "repro": {
+    "enable": true,
+    "dedicated_vm_count": 1,
+    "vmlinux_path": "/workspace/syzkaller/kernel/build-kasan/vmlinux",
+    "addr2line_binary": "addr2line",
+    "queue_capacity": 64,
+    "execute_timeout_ms": 30000
+  },
+  "phase0_worker_bin": "/workspace/talaria/build-llvm20/executor/channel/worker/ivshmem_worker",
+  "phase0_vm_id": 0,
+  "_phase1_run_limit_mode_comment": {
+    "task_count": "按任务数停止（看 phase1_total_tasks）",
+    "runtime": "按时间停止（看 phase1_runtime_seconds）",
+    "both": "兼容旧逻辑：任一达到即停（默认）"
+  },
+  "phase1_run_limit_mode": "task_count",
+  "phase1_runtime_seconds": 30000000,
+  "phase1_total_tasks": 100000000
+}

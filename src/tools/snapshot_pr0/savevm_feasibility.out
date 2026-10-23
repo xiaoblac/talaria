@@ -1,0 +1,30 @@
+[22:33:18] creating qcow2 overlay over raw base ...
+[22:33:18] overlay: image: /workspace/talaria/tools/snapshot_pr0/run/overlay.qcow2 | file format: qcow2 | virtual size: 2 GiB (2147483648 bytes) | disk size: 196 KiB | cluster_size: 65536 | backing file: /workspace/images-test-linux5.14/bookworm.img | backing file format: raw | Format specific information: |     compat: 1.1 |     compression type: zlib |     lazy refcounts: false |     refcount bits: 16 |     corrupt: false |     extended l2: false | 
+[22:33:18] launching QEMU:
+  qemu-system-x86_64 -m 2048 -smp 1 -display none -no-reboot -name pr0-savevm -serial file:/workspace/talaria/tools/snapshot_pr0/run/serial.log -qmp unix:/workspace/talaria/tools/snapshot_pr0/run/qmp.sock,server,nowait -enable-kvm -cpu host,migratable=on,tsc=off -drive file=/workspace/talaria/tools/snapshot_pr0/run/overlay.qcow2,if=ide,index=0,media=disk -kernel /workspace/syzkaller/kernel/build-kasan/arch/x86/boot/bzImage -append root=/dev/sda console=ttyS0 net.ifnames=0 biosdevname=0 nokaslr panic=1 oops=panic
+[22:33:18] waiting for boot marker 'login:' (timeout 240s) ...
+[22:34:46] boot marker FOUND (serial 192429 bytes) — proceeding
+[22:34:49] QMP greeting: {"QMP": {"version": {"qemu": {"micro": 0, "minor": 2, "major": 6}, "package": "D
+[22:34:52] savevm syz OK in 2735 ms (out='')
+[22:34:52] info snapshots:
+List of snapshots present on all disks:
+ID        TAG               VM SIZE                DATE     VM CLOCK     ICOUNT
+--        syz               820 MiB 2026-05-25 22:34:49 00:01:31.035
+[22:34:54] loadvm syz #1 OK in 1916 ms (out='')
+[22:34:56] loadvm syz #2 OK in 1693 ms (out='')
+[22:34:57] loadvm syz #3 OK in 1683 ms (out='')
+[22:34:59] loadvm syz #4 OK in 1744 ms (out='')
+[22:35:01] loadvm syz #5 OK in 1639 ms (out='')
+
+================ PR0 task-0 verdict ================
+booted to login: True
+savevm works   : True
+loadvm works   : True
+restore latency: [1916.3, 1692.9, 1683.4, 1743.6, 1638.9] ms  (min=1638.9 median=1692.9)
+snapshot store : qcow2 overlay (base immutable), no -snapshot flag
+snapshots:
+List of snapshots present on all disks:
+ID        TAG               VM SIZE                DATE     VM CLOCK     ICOUNT
+--        syz               820 MiB 2026-05-25 22:34:49 00:01:31.035
+
+DISK BLOCKER RESOLVED: True  (savevm/loadvm on qcow2 + KVM, AMD, vendor-neutral)

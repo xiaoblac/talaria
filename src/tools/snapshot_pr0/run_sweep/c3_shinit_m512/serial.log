@@ -1,0 +1,95 @@
+[    0.000000][    T0] Linux version 6.19.13 (youngkk@youngkk-vm) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #2 SMP PREEMPT_DYNAMIC Tue May 12 04:54:44 PDT 2026
+[    0.000000][    T0] Command line: root=/dev/sda console=ttyS0 net.ifnames=0 biosdevname=0 nokaslr panic=1 oops=panic init=/bin/sh
+[    0.000000][    T0] KERNEL supported cpus:
+[    0.000000][    T0]   Intel GenuineIntel
+[    0.000000][    T0]   AMD AuthenticAMD
+[    0.000000][    T0] BIOS-provided physical RAM map:
+[    0.000000][    T0] BIOS-e820: [mem 0x0000000000000000-0x000000000009fbff] usable
+[    0.000000][    T0] BIOS-e820: [mem 0x000000000009fc00-0x000000000009ffff] reserved
+[    0.000000][    T0] BIOS-e820: [mem 0x00000000000f0000-0x00000000000fffff] reserved
+[    0.000000][    T0] BIOS-e820: [mem 0x0000000000100000-0x000000001ffdffff] usable
+[    0.000000][    T0] BIOS-e820: [mem 0x000000001ffe0000-0x000000001fffffff] reserved
+[    0.000000][    T0] BIOS-e820: [mem 0x00000000feffc000-0x00000000feffffff] reserved
+[    0.000000][    T0] BIOS-e820: [mem 0x00000000fffc0000-0x00000000ffffffff] reserved
+[    0.000000][    T0] printk: legacy bootconsole [earlyser0] enabled
+[    0.000000][    T0] ERROR: earlyprintk= earlyser already used
+[    0.000000][    T0] ERROR: earlyprintk= earlyser already used
+[    0.000000][    T0] Hash pointers mode set to never.
+[    0.000000][    T0] Malformed early option 'vsyscall'
+[    0.000000][    T0] NX (Execute Disable) protection: active
+[    0.000000][    T0] APIC: Static calls initialized
+[    0.000000][    T0] SMBIOS 2.8 present.
+[    0.000000][    T0] DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.15.0-1 04/01/2014
+[    0.000000][    T0] DMI: Memory slots populated: 1/1
+[    0.000000][    T0] Hypervisor detected: KVM
+[    0.000000][    T0] last_pfn = 0x1ffe0 max_arch_pfn = 0x400000000
+[    0.000000][    T0] kvm-clock: Using msrs 4b564d01 and 4b564d00
+[    0.000002][    T0] kvm-clock: using sched offset of 1770373845 cycles
+[    0.000889][    T0] clocksource: kvm-clock: mask: 0xffffffffffffffff max_cycles: 0x1cd42e4dffb, max_idle_ns: 881590591483 ns
+[    0.007871][    T0] last_pfn = 0x1ffe0 max_arch_pfn = 0x400000000
+[    0.008893][    T0] MTRR map: 4 entries (3 fixed + 1 variable; max 19), built from 8 variable MTRRs
+[    0.010242][    T0] x86/PAT: Configuration [0-7]: WB  WC  UC- UC  WB  WP  UC- WT  
+[    0.013663][    T0] found SMP MP-table at [mem 0x000f5ba0-0x000f5baf]
+[    0.014627][    T0] Using GB pages for direct mapping
+[    0.016366][    T0] ACPI: Early table checksum verification disabled
+[    0.017338][    T0] ACPI: RSDP 0x00000000000F59E0 000014 (v00 BOCHS )
+[    0.018295][    T0] ACPI: RSDT 0x000000001FFE1905 000034 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.019667][    T0] ACPI: FACP 0x000000001FFE17B9 000074 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.021049][    T0] ACPI: DSDT 0x000000001FFE0040 001779 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.022438][    T0] ACPI: FACS 0x000000001FFE0000 000040
+[    0.023225][    T0] ACPI: APIC 0x000000001FFE182D 000078 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.024652][    T0] ACPI: HPET 0x000000001FFE18A5 000038 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.026027][    T0] ACPI: WAET 0x000000001FFE18DD 000028 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.027414][    T0] ACPI: Reserving FACP table memory at [mem 0x1ffe17b9-0x1ffe182c]
+[    0.028585][    T0] ACPI: Reserving DSDT table memory at [mem 0x1ffe0040-0x1ffe17b8]
+[    0.029732][    T0] ACPI: Reserving FACS table memory at [mem 0x1ffe0000-0x1ffe003f]
+[    0.030892][    T0] ACPI: Reserving APIC table memory at [mem 0x1ffe182d-0x1ffe18a4]
+[    0.032055][    T0] ACPI: Reserving HPET table memory at [mem 0x1ffe18a5-0x1ffe18dc]
+[    0.033207][    T0] ACPI: Reserving WAET table memory at [mem 0x1ffe18dd-0x1ffe1904]
+[    0.035377][    T0] No NUMA configuration found
+[    0.036083][    T0] Faking a node at [mem 0x0000000000000000-0x000000001ffdffff]
+[    0.037166][    T0] Faking node 0 at [mem 0x0000000000001000-0x0000000010000fff] (256MB)
+[    0.038375][    T0] Faking node 1 at [mem 0x0000000010001000-0x000000001ffdffff] (255MB)
+[    0.039838][    T0] NODE_DATA(0) allocated [mem 0x00ffa400-0x00ffffff]
+[    0.040821][    T0] NODE_DATA(1) allocated [mem 0x1ffd9400-0x1ffdefff]
+[    0.045865][    T0] Zone ranges:
+[    0.046369][    T0]   DMA      [mem 0x0000000000001000-0x0000000000ffffff]
+[    0.047389][    T0]   DMA32    [mem 0x0000000001000000-0x000000001ffdffff]
+[    0.048387][    T0]   Normal   empty
+[    0.048909][    T0]   Device   empty
+[    0.049443][    T0] Movable zone start for each node
+[    0.050170][    T0] Early memory node ranges
+[    0.050792][    T0]   node   0: [mem 0x0000000000001000-0x000000000009efff]
+[    0.051837][    T0]   node   0: [mem 0x0000000000100000-0x0000000010000fff]
+[    0.052861][    T0]   node   1: [mem 0x0000000010001000-0x000000001ffdffff]
+[    0.054129][    T0] Initmem setup node 0 [mem 0x0000000000001000-0x0000000010000fff]
+[    0.056010][    T0] Initmem setup node 1 [mem 0x0000000010001000-0x000000001ffdffff]
+[    0.057384][    T0] On node 0, zone DMA: 1 pages in unavailable ranges
+[    0.058470][    T0] On node 0, zone DMA: 97 pages in unavailable ranges
+[    0.063265][    T0] On node 1, zone DMA32: 32 pages in unavailable ranges
+[    0.199799][    T0] Kernel panic - not syncing: kasan_populate_shadow+0x5c7/0xaa0: Failed to allocate page, nid=0 from=1000000
+[    0.201543][    T0] CPU: 0 UID: 0 PID: 0 Comm: swapper Not tainted 6.19.13 #2 PREEMPT(undef) 
+[    0.202785][    T0] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.15.0-1 04/01/2014
+[    0.204109][    T0] Call Trace:
+[    0.204562][    T0]  <TASK>
+[    0.204980][    T0]  ? dump_stack_lvl+0x3d/0x1b0
+[    0.205650][    T0]  ? vpanic+0x679/0x710
+[    0.206238][    T0]  ? panic+0xc2/0xd0
+[    0.206808][    T0]  ? __pfx_panic+0x10/0x10
+[    0.207429][    T0]  ? pmd_set_huge+0x1fa/0x340
+[    0.208088][    T0]  ? __pfx_paravirt_set_sched_clock+0x1/0x10
+[    0.208960][    T0]  ? kasan_populate_shadow+0x5c7/0xaa0
+[    0.209776][    T0]  ? early_alloc+0x99/0xa0
+[    0.210428][    T0]  ? kasan_populate_shadow+0x5c7/0xaa0
+[    0.211212][    T0]  ? kasan_init+0x9c7/0xde0
+[    0.211854][    T0]  ? setup_arch+0x1579/0x22f0
+[    0.212543][    T0]  ? __pfx___mutex_unlock_slowpath+0x10/0x10
+[    0.213405][    T0]  ? __pfx_setup_arch+0x10/0x10
+[    0.214120][    T0]  ? __pfx__printk+0x10/0x10
+[    0.214785][    T0]  ? cgroup_init_early+0x46d/0x630
+[    0.215520][    T0]  ? start_kernel+0x79/0x4c0
+[    0.216187][    T0]  ? x86_64_start_reservations+0x18/0x30
+[    0.216988][    T0]  ? x86_64_start_kernel+0x133/0x190
+[    0.217746][    T0]  ? common_startup_64+0x13e/0x148
+[    0.218506][    T0]  </TASK>
+[    0.219465][    T0] Rebooting in 86400 seconds..

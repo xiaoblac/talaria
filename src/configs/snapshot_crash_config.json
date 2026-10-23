@@ -1,0 +1,91 @@
+{
+  "work_dir": "/workspace/talaria/run/snapshot_crash",
+  "retention": false,
+  "retention_max": 3,
+  "channel": {
+    "wait_ready_timeout_ms": 180000,
+    "loop_interval_ms": 100,
+    "health_check_interval_ms": 500,
+    "pre_reboot_drain_ms": 5500,
+    "input_queue_capacity": 64,
+    "abnormal_console_snapshot_lines": 80,
+    "vm": {
+      "arch": "amd64",
+      "image": "/workspace/images-test-linux5.14/bookworm.img",
+      "kernel": "/workspace/syzkaller/kernel/build-kasan/arch/x86/boot/bzImage",
+      "ssh_key": "/workspace/images-test-linux5.14/bookworm.id_rsa",
+      "ssh_user": "root",
+      "qemu": {
+        "cpu": 1,
+        "mem": 2048,
+        "cmdline": "nokaslr oops=panic panic=0 sysrq_always_enabled=1",
+        "snapshot_fuzzing": true
+      }
+    },
+    "transport": {
+      "n_workers": 1,
+      "ivshmem_path": "/workspace/talaria/run/snapshot_crash/ivshmem.shm",
+      "ivshmem_mode": "plain",
+      "wait_ready_poll_us": 1000,
+      "poll_sleep_us": 100
+    },
+    "health": {
+      "enable": true,
+      "sample_interval_ms": 200,
+      "heartbeat_timeout_ms": 1500,
+      "workers_per_round": 0
+    }
+  },
+  "executor": {
+    "idle_sleep_us": 1000000,
+    "submit_wait_for_slot_ms": 0,
+    "submit_strategy": { "name": "round_robin" },
+    "event_forward_strategy": { "blocking_timeout_ms": 1 },
+    "timeouts_ms": { "poll": 1, "pop": 5 }
+  },
+  "fuzzer": {
+    "high_watermark": 64,
+    "exec_timeout_ms": 5000,
+    "shutdown_grace_ms": 60000,
+    "worker_log": { "enable": true },
+    "worker_perf": { "enable": true, "sample_rate": 1, "report_every": 128 },
+    "mutator_policy": "syz_balanced",
+    "corpus": { "capacity": 10000, "max_drain": 32 }
+  },
+  "telemetry": {
+    "policy_monitor": { "min_dwell_seconds": 300, "window_size": 10, "stall_threshold": 0.01, "required_windows": 3, "degraded_channel_ratio": 0.5 },
+    "observability": { "pull_interval_ms": 500 },
+    "dashboard": { "enable": false, "refresh_interval_ms": 500, "max_events": 6, "use_alternate_screen": true },
+    "logging": { "enable": true, "stream": false, "flush_interval_ms": 250, "console_summary": true, "hot_path_sample_rate": 0 }
+  },
+  "target": {
+    "execution_mode": "kernel_syscall",
+    "coverage_mode": "kcov",
+    "sanitizer_mode": "none",
+    "sandbox_mode": "none",
+    "debug_smaps": true,
+    "debug_empty_fork": false
+  },
+  "coverage": {
+    "kcov": { "raw_pc": true, "max_pcs_per_exec": 8192, "sample_rate": 1.0, "drain_seconds": 1, "persist_seconds": 60, "max_inbox_batches": 4096 },
+    "export": { "enabled": true }
+  },
+  "persistence": {
+    "corpus": { "enable": true, "load_on_start": true },
+    "coverage": { "enable": true, "load_on_start": true },
+    "crash_repros_as_seeds": false
+  },
+  "repro": {
+    "enable": false,
+    "dedicated_vm_count": 1,
+    "vmlinux_path": "/workspace/syzkaller/kernel/build-kasan/vmlinux",
+    "addr2line_binary": "addr2line",
+    "queue_capacity": 64,
+    "execute_timeout_ms": 30000
+  },
+  "phase0_worker_bin": "/workspace/talaria/build-llvm20/executor/channel/worker/ivshmem_worker",
+  "phase0_vm_id": 0,
+  "phase1_run_limit_mode": "task_count",
+  "phase1_runtime_seconds": 30000000,
+  "phase1_total_tasks": 100000000
+}

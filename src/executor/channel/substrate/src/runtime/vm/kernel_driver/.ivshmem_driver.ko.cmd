@@ -1,0 +1,1 @@
+cmd_/workspace/talaria/vm/kernel_driver/ivshmem_driver.ko := ld.lld -r -m elf_x86_64 --build-id=sha1  -T scripts/module.lds -o /workspace/talaria/vm/kernel_driver/ivshmem_driver.ko /workspace/talaria/vm/kernel_driver/ivshmem_driver.o /workspace/talaria/vm/kernel_driver/ivshmem_driver.mod.o;  true

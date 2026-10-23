@@ -1,0 +1,6 @@
+# refuzz minimize_golden v1
+# os=linux arch=amd64 mode=crash_snapshot call_index=2
+mkdir(&(0x7f0000000000)='./file0\x00', 0x0)
+sched_yield()
+mount(&(0x7f0000000800)='ext4\x00', &(0x7f0000000000)='./file0\x00', &(0x7f0000001000)='ext4\x00', 0x0, 0x0)
+unlink(&(0x7f0000000000)='./file0\x00')

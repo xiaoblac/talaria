@@ -1,0 +1,2053 @@
+diff --git a/executor/common.h b/executor/common.h
+index e7e02ffb2..392132ee9 100644
+--- a/executor/common.h
++++ b/executor/common.h
+@@ -606,12 +606,257 @@ static void execute_one(void);
+ #include <sys/types.h>
+ #include <sys/wait.h>
+ 
++#if SYZ_EXECUTOR
++#include <errno.h>
++#include <fcntl.h>
++#include <stdio.h>
++#include <sys/resource.h>
++#include <time.h>
++#include <unistd.h>
++
++// [first-layer perf] The four things the fork-server parent actually does per
++// program. Mirrors reFuzz's worker-perf `scope=loop` so both fuzzers report the
++// same decomposition and one parser serves both. Only `executor` -- fork + the
++// child's syscalls + reap -- is the execution unit the two fuzzers share; the
++// other three are what this execution model spends around it. receive_execute()
++// (the block-wait for the next request) is deliberately not counted, so an idle
++// queue is never charged as execution cost.
++//
++// Output goes to a dedicated serial, never ttyS0: ttyS0 is the console
++// syz-manager parses for crashes, whereas QEMU writes a second `-serial file:...`
++// straight into a host file. Without that serial the open below fails, perf_fd
++// stays -1 and every hook no-ops, so an ordinary run is unaffected. All four
++// phases run in the parent, outside any KCOV window (KCOV is per-task and only
++// enabled in the child's execute_one), so these writes cannot land in a program's
++// coverage the way a write from inside a call window would.
++#define kPerfSerial "/dev/ttyS1"
++#define kPerfReportEvery 128
++
++static uint64 current_time_us(void)
++{
++	struct timespec ts;
++	if (clock_gettime(CLOCK_MONOTONIC, &ts))
++		fail("clock_gettime failed");
++	return (uint64)ts.tv_sec * 1000000 + (uint64)ts.tv_nsec / 1000;
++}
++
++// [ExecTL] CPU time this thread has consumed; differenced around fork() it
++// splits the fork into on-CPU kernel work vs waiting (runqueue or blocked).
++static uint64 thread_cputime_us(void)
++{
++	struct timespec ts;
++	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts))
++		return 0;
++	return (uint64)ts.tv_sec * 1000000 + (uint64)ts.tv_nsec / 1000;
++}
++
++struct tl_parent_point {
++	uint64 cpu_us;
++	uint64 rq_us;
++	bool cpu_valid;
++	bool rq_valid;
++};
++
++struct tl_parent_delta {
++	uint64 cpu_us;
++	uint64 rq_us;
++	bool cpu_valid;
++	bool rq_valid;
++};
++
++// The loop parent is single-request, so deltas of its thread counters can be
++// charged to that request. schedstat's second field is cumulative runqueue
++// wait in ns; a missing CONFIG_SCHED_INFO (or a transient read failure) makes
++// only the rq component unavailable for that interval.
++static struct tl_parent_point tl_parent_sample(void)
++{
++	struct tl_parent_point point = {};
++	struct timespec ts;
++	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0) {
++		point.cpu_us = (uint64)ts.tv_sec * 1000000 + (uint64)ts.tv_nsec / 1000;
++		point.cpu_valid = true;
++	}
++	int fd = open("/proc/self/schedstat", O_RDONLY | O_CLOEXEC);
++	if (fd < 0)
++		return point;
++	char buf[96] = {};
++	ssize_t n = read(fd, buf, sizeof(buf) - 1);
++	close(fd);
++	if (n <= 0)
++		return point;
++	unsigned long long runtime_ns = 0;
++	unsigned long long wait_ns = 0;
++	if (sscanf(buf, "%llu %llu", &runtime_ns, &wait_ns) == 2) {
++		point.rq_us = wait_ns / 1000;
++		point.rq_valid = true;
++	}
++	return point;
++}
++
++static struct tl_parent_delta tl_parent_diff(struct tl_parent_point begin,
++					      struct tl_parent_point end)
++{
++	struct tl_parent_delta delta = {};
++	if (begin.cpu_valid && end.cpu_valid && end.cpu_us >= begin.cpu_us) {
++		delta.cpu_us = end.cpu_us - begin.cpu_us;
++		delta.cpu_valid = true;
++	}
++	if (begin.rq_valid && end.rq_valid && end.rq_us >= begin.rq_us) {
++		delta.rq_us = end.rq_us - begin.rq_us;
++		delta.rq_valid = true;
++	}
++	return delta;
++}
++
++static const char* const perf_stage_names[] = {"prepare", "executor", "delivery", "cleanup"};
++#define kPerfStages (sizeof(perf_stage_names) / sizeof(perf_stage_names[0]))
++static uint64 perf_stage_us[kPerfStages];
++static uint64 perf_samples;
++static int perf_fd = -1;
++
++// [ExecTL] execution-timeline record of the previous request. Emitted one
++// iteration later, once its R (ready point) and A' (next-request arrival) are
++// known. B/C stamps (wall + process CPU + main-thread runqueue wait) come from
++// the shared output header where the worker child wrote them; fork and rusage
++// numbers are taken in this process.
++static bool tl_pending_valid;
++static uint64 tl_pending_id, tl_pending_b, tl_pending_c, tl_pending_reap;
++static uint64 tl_pending_b_cpu, tl_pending_b_rq, tl_pending_c_cpu, tl_pending_c_rq;
++static uint64 tl_pending_fork_wall, tl_pending_fork_cpu;
++static uint64 tl_pending_child_cpu, tl_pending_child_nivcsw, tl_pending_child_minflt;
++static uint64 tl_pending_parent_pre_cpu, tl_pending_parent_pre_rq;
++static uint64 tl_pending_parent_engine_cpu, tl_pending_parent_engine_rq;
++static uint64 tl_pending_parent_post_cpu, tl_pending_parent_post_rq;
++static uint64 tl_pending_parent_idle_cpu, tl_pending_parent_idle_rq;
++static bool tl_pending_parent_pre_cpu_valid, tl_pending_parent_engine_cpu_valid;
++static bool tl_pending_parent_post_cpu_valid, tl_pending_parent_idle_cpu_valid;
++static struct tl_parent_point tl_pending_parent_engine_end;
++
++static uint64 exec_cpu_done, exec_cpu_execution, exec_cpu_parent_active;
++static uint64 exec_cpu_parent_idle, exec_cpu_missing, exec_cpu_last_emit;
++
++static void perf_emit(const char* buf, int len)
++{
++	if (perf_fd < 0 || len <= 0)
++		return;
++	// Non-blocking and best-effort: a full uart must never stall or fail the
++	// fuzzer, and errno must not leak into the caller's error handling.
++	int saved_errno = errno;
++	ssize_t wrote = write(perf_fd, buf, len);
++	(void)wrote;
++	errno = saved_errno;
++}
++
++static bool process_cputime_us(uint64* out)
++{
++	struct timespec ts = {};
++	if (!out || clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts))
++		return false;
++	*out = (uint64)ts.tv_sec * 1000000 + (uint64)ts.tv_nsec / 1000;
++	return true;
++}
++
++static bool reaped_children_cputime_us(uint64* out)
++{
++	struct rusage usage = {};
++	if (!out || getrusage(RUSAGE_CHILDREN, &usage))
++		return false;
++	*out = (uint64)usage.ru_utime.tv_sec * 1000000 + usage.ru_utime.tv_usec +
++	       (uint64)usage.ru_stime.tv_sec * 1000000 + usage.ru_stime.tv_usec;
++	return true;
++}
++
++static void exec_cpu_accumulate_pending(void)
++{
++	bool missing = false;
++	if (tl_pending_b && tl_pending_c >= tl_pending_b &&
++	    tl_pending_c_cpu >= tl_pending_b_cpu) {
++		exec_cpu_execution += tl_pending_c_cpu - tl_pending_b_cpu;
++	} else {
++		missing = true;
++	}
++	if (tl_pending_parent_pre_cpu_valid &&
++	    tl_pending_parent_engine_cpu_valid &&
++	    tl_pending_parent_post_cpu_valid) {
++		exec_cpu_parent_active += tl_pending_parent_pre_cpu +
++					  tl_pending_parent_engine_cpu +
++					  tl_pending_parent_post_cpu;
++	} else {
++		missing = true;
++	}
++	if (tl_pending_parent_idle_cpu_valid)
++		exec_cpu_parent_idle += tl_pending_parent_idle_cpu;
++	else
++		missing = true;
++	if (!tl_pending_reap)
++		missing = true;
++	exec_cpu_done++;
++	if (missing)
++		exec_cpu_missing++;
++}
++
++static void exec_cpu_report(bool force)
++{
++	const uint64 report_interval_us = 5000000;
++	uint64 now = current_time_us();
++	if (!force && exec_cpu_last_emit && now - exec_cpu_last_emit < report_interval_us)
++		return;
++	uint64 process_cpu = 0;
++	uint64 children_cpu = 0;
++	if (!process_cputime_us(&process_cpu) ||
++	    !reaped_children_cputime_us(&children_cpu))
++		return;
++	char buf[384];
++	perf_emit(buf, snprintf(buf, sizeof(buf),
++				"[SyzExecCPU] wid=%llu t=%llu done=%llu pc=%llu ch=%llu"
++				" ex=%llu pa=%llu pi=%llu miss=%llu\n",
++				procid, (unsigned long long)now,
++				(unsigned long long)exec_cpu_done,
++				(unsigned long long)process_cpu,
++				(unsigned long long)children_cpu,
++				(unsigned long long)exec_cpu_execution,
++				(unsigned long long)exec_cpu_parent_active,
++				(unsigned long long)exec_cpu_parent_idle,
++				(unsigned long long)exec_cpu_missing));
++	exec_cpu_last_emit = now;
++}
++
++// Cumulative, never reset -- same semantics as reFuzz's accumulator, so the same
++// parser serves both: the last line per (wid, stage) is the whole-run snapshot and
++// lines must never be summed. wid=procid keeps the procs that share this serial
++// apart.
++static void perf_report(void)
++{
++	if (perf_fd < 0 || perf_samples == 0)
++		return;
++	uint64 total_us = 0;
++	for (unsigned i = 0; i < kPerfStages; i++)
++		total_us += perf_stage_us[i];
++	char buf[256];
++	for (unsigned i = 0; i < kPerfStages; i++) {
++		perf_emit(buf, snprintf(buf, sizeof(buf),
++					"[SyzPerfStage] wid=%llu scope=loop relation=exclusive stage=%s n=%llu avg_us=%llu\n",
++					procid, perf_stage_names[i], (unsigned long long)perf_samples,
++					(unsigned long long)(perf_stage_us[i] / perf_samples)));
++	}
++	perf_emit(buf, snprintf(buf, sizeof(buf),
++				"[SyzPerfStage] wid=%llu scope=loop relation=total stage=total n=%llu avg_us=%llu\n",
++				procid, (unsigned long long)perf_samples,
++				(unsigned long long)(total_us / perf_samples)));
++}
++#endif
++
+ static void loop(void)
+ {
+ #if SYZ_HAVE_SETUP_LOOP
+ 	setup_loop();
+ #endif
+ #if SYZ_EXECUTOR
++	// Opened once per fork-server parent. Fails (leaving perf off) unless the VM
++	// was given the second serial -- see kPerfSerial above.
++	perf_fd = open(kPerfSerial, O_WRONLY | O_CLOEXEC | O_NOCTTY | O_NONBLOCK);
++	if (!flag_snapshot && perf_fd >= 0)
++		exec_cpu_report(true);
+ 	// Tell parent that we are ready to serve.
+ 	if (!flag_snapshot)
+ 		reply_execute(0);
+@@ -622,6 +867,11 @@ static void loop(void)
+ #else
+ 	for (;; iter++) {
+ #endif
++#if SYZ_EXECUTOR
++		uint64 perf_t0 = 0;
++		if (perf_fd >= 0)
++			perf_t0 = current_time_us();
++#endif
+ #if SYZ_EXECUTOR || SYZ_USE_TMP_DIR
+ 		// Create a new private work dir for this test (removed at the end of the loop).
+ 		char cwdbuf[32];
+@@ -633,10 +883,75 @@ static void loop(void)
+ 		reset_loop();
+ #endif
+ #if SYZ_EXECUTOR
++		// prepare ends here. The receive_execute() wait that follows is idle time --
++		// there is no request to run yet -- so it stays out of every phase.
++		uint64 perf_t1 = 0;
++		struct tl_parent_point tl_parent_ready = {};
++		if (perf_fd >= 0) {
++			perf_t1 = current_time_us();
++			tl_parent_ready = tl_parent_sample();
++			if (!flag_snapshot && tl_pending_valid) {
++				struct tl_parent_delta post =
++					tl_parent_diff(tl_pending_parent_engine_end, tl_parent_ready);
++				tl_pending_parent_post_cpu = post.cpu_us;
++				tl_pending_parent_post_rq = post.rq_us;
++				tl_pending_parent_post_cpu_valid = post.cpu_valid;
++			}
++		}
+ 		if (!flag_snapshot)
+ 			receive_execute();
++		uint64 perf_t2 = 0;
++		struct tl_parent_point tl_parent_claim = {};
++		if (perf_fd >= 0) {
++			perf_t2 = current_time_us();
++			tl_parent_claim = tl_parent_sample();
++			if (!flag_snapshot && tl_pending_valid) {
++				struct tl_parent_delta idle =
++					tl_parent_diff(tl_parent_ready, tl_parent_claim);
++				tl_pending_parent_idle_cpu = idle.cpu_us;
++				tl_pending_parent_idle_rq = idle.rq_us;
++				tl_pending_parent_idle_cpu_valid = idle.cpu_valid;
++				exec_cpu_accumulate_pending();
++				exec_cpu_report(false);
++			}
++		}
++		// [ExecTL] scrub the child stamps before fork so an early-dying child
++		// cannot leave the previous program's B/C behind.
++		if (perf_fd >= 0) {
++			output_data->tl_b_us.store(0, std::memory_order_relaxed);
++			output_data->tl_c_us.store(0, std::memory_order_relaxed);
++			output_data->tl_b_cpu_us.store(0, std::memory_order_relaxed);
++			output_data->tl_b_rq_us.store(0, std::memory_order_relaxed);
++			output_data->tl_c_cpu_us.store(0, std::memory_order_relaxed);
++			output_data->tl_c_rq_us.store(0, std::memory_order_relaxed);
++		}
++#endif
++#if SYZ_EXECUTOR
++		// [ExecTL] wall vs this-thread CPU across fork(): the CPU part is the
++		// kernel's fork work, the remainder is waiting (runqueue or blocked).
++		// The child computes garbage below (its thread CPU clock resets on
++		// fork) but never uses it.
++		struct tl_parent_point tl_parent_engine_start = {};
++		struct tl_parent_delta tl_parent_pre = {};
++		uint64 tl_fork_t0 = 0;
++		uint64 tl_fork_c0 = 0;
++		if (perf_fd >= 0) {
++			tl_parent_engine_start = tl_parent_sample();
++			tl_parent_pre =
++				tl_parent_diff(tl_parent_claim, tl_parent_engine_start);
++			tl_fork_t0 = current_time_us();
++			tl_fork_c0 = thread_cputime_us();
++		}
+ #endif
+ 		int pid = fork();
++#if SYZ_EXECUTOR
++		uint64 tl_fork_wall = 0;
++		uint64 tl_fork_cpu = 0;
++		if (perf_fd >= 0) {
++			tl_fork_wall = current_time_us() - tl_fork_t0;
++			tl_fork_cpu = thread_cputime_us() - tl_fork_c0;
++		}
++#endif
+ 		if (pid < 0)
+ 			fail("clone failed");
+ 		if (pid == 0) {
+@@ -666,6 +981,53 @@ static void loop(void)
+ 		debug("spawned worker pid %d\n", pid);
+ 
+ #if SYZ_EXECUTOR
++		// [ExecTL] emit the previous request's loop-side record while the new
++		// request's child is already running, keeping the serial write off the
++		// A->B critical path. R = ready point before receive_execute, A2 =
++		// request arrival at the fork server.
++		//
++		// [2026-07-21] Full sampling when the ttyS1 perf serial exists
++		// (perf_fd >= 0); without it nothing is collected or emitted, so a
++		// coverage-only run gets zero sampling overhead. Must stay bit-identical
++		// to executor_runner.h's copy of this condition -- see its comment for
++		// the full rationale (replay paired wall-time analysis needs every
++		// request's D and B/C/R/A2 rows, not a ~25% hash-folded sample of
++		// them).
++		if (!flag_snapshot && tl_pending_valid) {
++			if (perf_fd >= 0) { // ((tl_pending_id ^ (tl_pending_id >> 4)) & 3) == 0
++				char tl_buf[768];
++				perf_emit(tl_buf, snprintf(tl_buf, sizeof(tl_buf),
++							   "[SyzTL] wid=%llu id=%llu B=%llu C=%llu R=%llu A2=%llu"
++							   " bc=%llu bq=%llu cc=%llu cq=%llu fw=%llu fc=%llu"
++							   " rp=%llu ru=%llu iv=%llu mf=%llu"
++							   " ppc=%llu ppq=%llu pec=%llu peq=%llu"
++							   " poc=%llu poq=%llu pic=%llu piq=%llu\n",
++							   procid, (unsigned long long)tl_pending_id,
++							   (unsigned long long)tl_pending_b,
++							   (unsigned long long)tl_pending_c,
++							   (unsigned long long)perf_t1,
++							   (unsigned long long)perf_t2,
++							   (unsigned long long)tl_pending_b_cpu,
++							   (unsigned long long)tl_pending_b_rq,
++							   (unsigned long long)tl_pending_c_cpu,
++							   (unsigned long long)tl_pending_c_rq,
++							   (unsigned long long)tl_pending_fork_wall,
++							   (unsigned long long)tl_pending_fork_cpu,
++							   (unsigned long long)tl_pending_reap,
++							   (unsigned long long)tl_pending_child_cpu,
++							   (unsigned long long)tl_pending_child_nivcsw,
++							   (unsigned long long)tl_pending_child_minflt,
++							   (unsigned long long)tl_pending_parent_pre_cpu,
++							   (unsigned long long)tl_pending_parent_pre_rq,
++							   (unsigned long long)tl_pending_parent_engine_cpu,
++							   (unsigned long long)tl_pending_parent_engine_rq,
++							   (unsigned long long)tl_pending_parent_post_cpu,
++							   (unsigned long long)tl_pending_parent_post_rq,
++							   (unsigned long long)tl_pending_parent_idle_cpu,
++							   (unsigned long long)tl_pending_parent_idle_rq));
++			}
++			tl_pending_valid = false;
++		}
+ 		if (flag_snapshot)
+ 			SnapshotPrepareParent();
+ #endif
+@@ -680,11 +1042,33 @@ static void loop(void)
+ #if SYZ_EXECUTOR
+ 		uint64 last_executed = start;
+ 		uint32 executed_calls = output_data->completed.load(std::memory_order_relaxed);
++		// [ExecTL] wait4 instead of waitpid: same reap semantics, plus the
++		// child's rusage for free (utime+stime = CPU the whole child consumed,
++		// nivcsw = involuntary preemptions, minflt = COW faults). Zero when
++		// the child was killed via kill_and_wait instead.
++		struct rusage tl_ru;
++		uint64 tl_reap_ts = 0;
++		if (perf_fd >= 0)
++			memset(&tl_ru, 0, sizeof(tl_ru));
+ #endif
+ 		for (;;) {
+ 			sleep_ms(10);
++#if SYZ_EXECUTOR
++			if (perf_fd >= 0) {
++				struct rusage tl_ru_tmp = {};
++				pid_t tl_reaped = wait4(-1, &status, WNOHANG | WAIT_FLAGS, &tl_ru_tmp);
++				if (tl_reaped == pid) {
++					tl_ru = tl_ru_tmp;
++					tl_reap_ts = current_time_us();
++					break;
++				}
++			} else if (waitpid(-1, &status, WNOHANG | WAIT_FLAGS) == pid) {
++				break;
++			}
++#else
+ 			if (waitpid(-1, &status, WNOHANG | WAIT_FLAGS) == pid)
+ 				break;
++#endif
+ #if SYZ_EXECUTOR
+ 			// Even though the test process executes exit at the end
+ 			// and execution time of each syscall is bounded by syscall_timeout_ms (~50ms),
+@@ -733,21 +1117,100 @@ static void loop(void)
+ 			break;
+ 		}
+ #if SYZ_EXECUTOR
++		struct tl_parent_point tl_parent_engine_end = {};
++		struct tl_parent_delta tl_parent_engine = {};
++		if (perf_fd >= 0) {
++			tl_parent_engine_end = tl_parent_sample();
++			tl_parent_engine =
++				tl_parent_diff(tl_parent_engine_start, tl_parent_engine_end);
++		}
+ 		if (WEXITSTATUS(status) == kFailStatus) {
+ 			errno = 0;
+ 			fail("child failed");
+ 		}
++		// executor ends: fork + the child's entire run + reap. This is the unit both
++		// fuzzers share and it stays a black box on purpose -- what is inside it
++		// (isolation / setup / syscalls / KCOV) is the same machinery in both, so
++		// splitting it would not show a model difference, only drag in the
++		// workload's syscall variance.
++		uint64 perf_t3 = 0;
++		// [ExecTL] read the child's B/C stamps before reply_execute: once the
++		// reply is out, the runner may Reset() the shared output header.
++		if (perf_fd >= 0) {
++			perf_t3 = current_time_us();
++			if (!flag_snapshot) {
++				tl_pending_id = request_id;
++				tl_pending_b = output_data->tl_b_us.load(std::memory_order_relaxed);
++				tl_pending_c = output_data->tl_c_us.load(std::memory_order_relaxed);
++				tl_pending_b_cpu = output_data->tl_b_cpu_us.load(std::memory_order_relaxed);
++				tl_pending_b_rq = output_data->tl_b_rq_us.load(std::memory_order_relaxed);
++				tl_pending_c_cpu = output_data->tl_c_cpu_us.load(std::memory_order_relaxed);
++				tl_pending_c_rq = output_data->tl_c_rq_us.load(std::memory_order_relaxed);
++				tl_pending_fork_wall = tl_fork_wall;
++				tl_pending_fork_cpu = tl_fork_cpu;
++				tl_pending_reap = tl_reap_ts;
++				tl_pending_parent_pre_cpu = tl_parent_pre.cpu_us;
++				tl_pending_parent_pre_rq = tl_parent_pre.rq_us;
++				tl_pending_parent_pre_cpu_valid = tl_parent_pre.cpu_valid;
++				tl_pending_parent_engine_cpu = tl_parent_engine.cpu_us;
++				tl_pending_parent_engine_rq = tl_parent_engine.rq_us;
++				tl_pending_parent_engine_cpu_valid = tl_parent_engine.cpu_valid;
++				tl_pending_parent_engine_end = tl_parent_engine_end;
++				tl_pending_child_cpu = (uint64)tl_ru.ru_utime.tv_sec * 1000000 + tl_ru.ru_utime.tv_usec +
++						       (uint64)tl_ru.ru_stime.tv_sec * 1000000 + tl_ru.ru_stime.tv_usec;
++				tl_pending_child_nivcsw = tl_ru.ru_nivcsw;
++				tl_pending_child_minflt = tl_ru.ru_minflt;
++				tl_pending_valid = true;
++			}
++		}
+ 		reply_execute(0);
++		uint64 perf_t4 = 0;
++		if (perf_fd >= 0)
++			perf_t4 = current_time_us();
+ #endif
+ #if SYZ_EXECUTOR || SYZ_USE_TMP_DIR
+ 		remove_dir(cwdbuf);
+ #endif
++#if SYZ_EXECUTOR
++		// cleanup runs after the result is already out, i.e. off the request's
++		// critical path: it costs this proc's capacity, not the request's latency.
++		uint64 perf_t5 = 0;
++		if (perf_fd >= 0) {
++			perf_t5 = current_time_us();
++			perf_stage_us[0] += perf_t1 - perf_t0;
++			perf_stage_us[1] += perf_t3 - perf_t2;
++			perf_stage_us[2] += perf_t4 - perf_t3;
++			perf_stage_us[3] += perf_t5 - perf_t4;
++			if (++perf_samples % kPerfReportEvery == 0)
++				perf_report();
++		}
++#endif
+ #if SYZ_LEAK
+ 		// Note: this will fail under setuid sandbox because we don't have
+ 		// write permissions for the kmemleak file.
+ 		check_leaks();
+ #endif
+ 	}
++#if SYZ_EXECUTOR
++	// A finite fork-server lifetime has no next receive_execute() iteration to
++	// close the final pending request. Settle its post-engine CPU at retirement
++	// and emit one final cumulative snapshot so process/child tails are not lost
++	// at every SYZ_REPEAT_TIMES boundary.
++	if (!flag_snapshot && tl_pending_valid && perf_fd >= 0) {
++		struct tl_parent_point tl_parent_retire = tl_parent_sample();
++		struct tl_parent_delta post =
++			tl_parent_diff(tl_pending_parent_engine_end, tl_parent_retire);
++		tl_pending_parent_post_cpu = post.cpu_us;
++		tl_pending_parent_post_rq = post.rq_us;
++		tl_pending_parent_post_cpu_valid = post.cpu_valid;
++		tl_pending_parent_idle_cpu = 0;
++		tl_pending_parent_idle_rq = 0;
++		tl_pending_parent_idle_cpu_valid = true;
++		exec_cpu_accumulate_pending();
++	}
++	if (!flag_snapshot && perf_fd >= 0)
++		exec_cpu_report(true);
++#endif
+ }
+ #else
+ static void loop(void)
+diff --git a/executor/executor.cc b/executor/executor.cc
+index 3ba21e846..608fb27ab 100644
+--- a/executor/executor.cc
++++ b/executor/executor.cc
+@@ -147,6 +147,20 @@ struct alignas(8) OutputData {
+ 	std::atomic<uint32> completed;
+ 	std::atomic<uint32> num_calls;
+ 	std::atomic<flatbuffers::Offset<flatbuffers::Vector<uint8_t>>> result_offset;
++	// [ExecTL] round-1 execution-timeline stamps (CLOCK_MONOTONIC us) written
++	// by the worker child during execute_one and read back by the fork-server
++	// parent in loop() after reap (both share this mapping); the runner only
++	// zeroes them in Reset().
++	std::atomic<uint64> tl_b_us;
++	std::atomic<uint64> tl_c_us;
++	// [ExecTL] CPU dimension at the same stamps: process CPU time consumed and
++	// main-thread runqueue wait (/proc/self/schedstat), both ~0 at fork, so
++	// each wall segment splits into on-CPU / waiting-for-CPU / waiting-for-
++	// events.
++	std::atomic<uint64> tl_b_cpu_us;
++	std::atomic<uint64> tl_b_rq_us;
++	std::atomic<uint64> tl_c_cpu_us;
++	std::atomic<uint64> tl_c_rq_us;
+ 	struct {
+ 		// Call index in the test program (they may be out-of-order is some syscalls block).
+ 		int index;
+@@ -930,6 +944,34 @@ void execute_glob()
+ 	output_data->result_offset.store(off, std::memory_order_release);
+ }
+ 
++#if SYZ_EXECUTOR_USES_FORK_SERVER
++#include <stdlib.h>
++// [ExecTL] sample this process's consumed CPU and the main thread's cumulative
++// runqueue wait (/proc/self/schedstat; needs CONFIG_SCHED_INFO, reads 0 when
++// absent). Both start ~0 at fork, so the values at B are the child-setup split
++// and C-B is the execution split: wall = cpu + runqueue + blocked.
++static void tl_cpu_sample(uint64* cpu_us, uint64* rq_us)
++{
++	*cpu_us = 0;
++	*rq_us = 0;
++	struct timespec ts;
++	if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) == 0)
++		*cpu_us = (uint64)ts.tv_sec * 1000000 + (uint64)ts.tv_nsec / 1000;
++	int fd = open("/proc/self/schedstat", O_RDONLY);
++	if (fd < 0)
++		return;
++	char buf[96] = {};
++	ssize_t n = read(fd, buf, sizeof(buf) - 1);
++	close(fd);
++	if (n <= 0)
++		return;
++	char* end = nullptr;
++	strtoull(buf, &end, 10);
++	if (end)
++		*rq_us = strtoull(end, nullptr, 10) / 1000;
++}
++#endif
++
+ // execute_one executes program stored in input_data.
+ void execute_one()
+ {
+@@ -954,6 +996,16 @@ void execute_one()
+ 	// Output buffer may be pkey-protected in snapshot mode, so don't write the output size
+ 	// (it's fixed and known anyway).
+ 	output_builder.emplace(output_data, output_size, !flag_snapshot);
++#if SYZ_EXECUTOR_USES_FORK_SERVER
++	// [ExecTL] B: output region ready; coverage arm + program walk start here.
++	if (!flag_snapshot && perf_fd >= 0) {
++		output_data->tl_b_us.store(current_time_us(), std::memory_order_relaxed);
++		uint64 tl_cpu = 0, tl_rq = 0;
++		tl_cpu_sample(&tl_cpu, &tl_rq);
++		output_data->tl_b_cpu_us.store(tl_cpu, std::memory_order_relaxed);
++		output_data->tl_b_rq_us.store(tl_rq, std::memory_order_relaxed);
++	}
++#endif
+ 	uint64 start = current_time_ms();
+ 	uint8* input_pos = input_data;
+ 
+@@ -1172,6 +1224,17 @@ void execute_one()
+ 			write_extra_output();
+ 		}
+ 	}
++#if SYZ_EXECUTOR_USES_FORK_SERVER
++	// [ExecTL] C: program executed and feedback fully written to the output
++	// region; what remains (commit/reply) belongs to the result path.
++	if (!flag_snapshot && perf_fd >= 0) {
++		output_data->tl_c_us.store(current_time_us(), std::memory_order_relaxed);
++		uint64 tl_cpu = 0, tl_rq = 0;
++		tl_cpu_sample(&tl_cpu, &tl_rq);
++		output_data->tl_c_cpu_us.store(tl_cpu, std::memory_order_relaxed);
++		output_data->tl_c_rq_us.store(tl_rq, std::memory_order_relaxed);
++	}
++#endif
+ }
+ 
+ thread_t* schedule_call(int call_index, int call_num, uint64 copyout_index, uint64 num_args, uint64* args, uint8* pos, call_props_t call_props)
+diff --git a/executor/executor_runner.h b/executor/executor_runner.h
+index f26d446bf..10b65197b 100644
+--- a/executor/executor_runner.h
++++ b/executor/executor_runner.h
+@@ -4,8 +4,10 @@
+ #include <cstring>
+ #include <fcntl.h>
+ #include <signal.h>
++#include <stdlib.h>
+ #include <sys/mman.h>
+ #include <sys/resource.h>
++#include <time.h>
+ #include <unistd.h>
+ 
+ #include <algorithm>
+@@ -20,6 +22,117 @@
+ 
+ #include "pkg/flatrpc/flatrpc.h"
+ 
++// [ExecTL] round-1 execution-timeline, runner side: A = the proc claims a
++// request, D = the result has been flushed to the host connection. Lines go to
++// the same dedicated perf serial as the fork server's [SyzTL] records
++// (common.h kPerfSerial) and silently no-op without that serial. Sampling is
++// by hash-folded request id and must match the loop-side rule in common.h.
++static uint64 TlNowUs()
++{
++	struct timespec ts;
++	if (clock_gettime(CLOCK_MONOTONIC, &ts))
++		return 0;
++	return (uint64)ts.tv_sec * 1000000 + (uint64)ts.tv_nsec / 1000;
++}
++
++static int TlSerialFd()
++{
++	static int fd = open("/dev/ttyS1", O_WRONLY | O_CLOEXEC | O_NOCTTY | O_NONBLOCK);
++	return fd;
++}
++
++// Cumulative program completions published by this runner process. All Proc
++// objects are driven by the runner event loop, so no synchronization is needed.
++static uint64 tl_runner_completed;
++
++static void TlEmitRunner(int proc_id, uint64 req_id, uint64 a_us, uint64 d_us)
++{
++	int fd = TlSerialFd();
++	if (fd < 0)
++		return;
++	char buf[128];
++	int n = snprintf(buf, sizeof(buf), "[SyzTL] wid=%d id=%llu A=%llu D=%llu\n",
++			 proc_id, (unsigned long long)req_id,
++			 (unsigned long long)a_us, (unsigned long long)d_us);
++	if (n <= 0)
++		return;
++	int saved_errno = errno;
++	ssize_t wrote = write(fd, buf, n);
++	(void)wrote;
++	errno = saved_errno;
++}
++
++// [ExecTL] guest-side saturation sample: cumulative /proc/stat cpu jiffies plus
++// procs_running/procs_blocked, one line every ~5s from the runner loop. The
++// parser diffs consecutive lines; with the vCPU count known this yields busy%
++// and runqueue depth inside the VM, separating "the mechanism is slow" from
++// "the CPUs are oversubscribed".
++static void TlEmitCpuStat()
++{
++	int fd = TlSerialFd();
++	if (fd < 0)
++		return;
++	int sfd = open("/proc/stat", O_RDONLY);
++	if (sfd < 0)
++		return;
++	static char stat_buf[16384];
++	ssize_t n = read(sfd, stat_buf, sizeof(stat_buf) - 1);
++	close(sfd);
++	if (n <= 0)
++		return;
++	stat_buf[n] = 0;
++	unsigned long long v[8] = {};
++	if (sscanf(stat_buf, "cpu %llu %llu %llu %llu %llu %llu %llu %llu",
++		   &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7]) != 8)
++		return;
++	unsigned long long running = 0, blocked = 0;
++	const char* p = strstr(stat_buf, "procs_running ");
++	if (p)
++		running = strtoull(p + strlen("procs_running "), nullptr, 10);
++	p = strstr(stat_buf, "procs_blocked ");
++	if (p)
++		blocked = strtoull(p + strlen("procs_blocked "), nullptr, 10);
++	long hz = sysconf(_SC_CLK_TCK);
++	if (hz <= 0)
++		return;
++	char buf[256];
++	int m = snprintf(buf, sizeof(buf),
++			 "[SyzCPU] t=%llu u=%llu n=%llu s=%llu i=%llu w=%llu hi=%llu si=%llu st=%llu run=%llu blk=%llu hz=%ld\n",
++			 (unsigned long long)TlNowUs(), v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], running, blocked, hz);
++	if (m <= 0)
++		return;
++	int saved_errno = errno;
++	ssize_t wrote = write(fd, buf, m);
++	(void)wrote;
++	errno = saved_errno;
++}
++
++// Shared-role resource ledger. Unlike [SyzTL], this is deliberately not tied
++// to a request window: over any steady-state sample range,
++// runner CPU/request = delta(cpu) / delta(done).
++static void TlEmitRoleCpu()
++{
++	int fd = TlSerialFd();
++	if (fd < 0)
++		return;
++	struct timespec ts;
++	if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts))
++		return;
++	uint64 cpu_us = (uint64)ts.tv_sec * 1000000 + (uint64)ts.tv_nsec / 1000;
++	char buf[128];
++	int n = snprintf(buf, sizeof(buf),
++			 "[SyzRoleCPU] t=%llu cpu=%llu done=%llu\n",
++			 (unsigned long long)TlNowUs(),
++			 (unsigned long long)cpu_us,
++			 (unsigned long long)tl_runner_completed);
++	if (n <= 0)
++		return;
++	int saved_errno = errno;
++	ssize_t wrote = write(fd, buf, n);
++	(void)wrote;
++	errno = saved_errno;
++}
++
+ inline std::ostream& operator<<(std::ostream& ss, const rpc::ExecRequestRawT& req)
+ {
+ 	return ss << "id=" << req.id
+@@ -129,7 +242,7 @@ public:
+ 		Start();
+ 	}
+ 
+-	bool Execute(rpc::ExecRequestRawT& msg)
++	bool Execute(rpc::ExecRequestRawT& msg, uint64 recv_ms)
+ 	{
+ 		if (state_ != State::Started && state_ != State::Idle)
+ 			return false;
+@@ -149,7 +262,10 @@ public:
+ 					      exec_env_ != msg.exec_opts->env_flags() || sandbox_arg_ != msg.exec_opts->sandbox_arg()))
+ 			Restart();
+ 		attempts_ = 0;
++		recv_ms_ = recv_ms;
+ 		msg_ = std::move(msg);
++		// [ExecTL] A: this proc now owns the request.
++		tl_a_us_ = TlSerialFd() >= 0 ? TlNowUs() : 0;
+ 		if (state_ == State::Started)
+ 			Handshake();
+ 		else
+@@ -245,6 +361,12 @@ private:
+ 	uint64 exec_start_ = 0;
+ 	uint64 wait_start_ = 0;
+ 	uint64 wait_end_ = 0;
++	// [RTT] runner-receive time (ms) of the current request, threaded from
++	// Handle so the proc can report recv->exec slot_wait via wait_duration.
++	uint64 recv_ms_ = 0;
++	// [ExecTL] A stamp (us) of the current request, taken when this proc
++	// claimed it; 0 = no claim in flight.
++	uint64 tl_a_us_ = 0;
+ 
+ 	friend std::ostream& operator<<(std::ostream& ss, const Proc& proc)
+ 	{
+@@ -405,9 +527,16 @@ private:
+ 		exec.proc_id = id_;
+ 		exec.try_ = attempts_;
+ 
+-		if (wait_start_) {
+-			exec.wait_duration = (wait_end_ - wait_start_) * 1000 * 1000;
+-			wait_end_ = wait_start_ = 0;
++		// [RTT] wait_duration repurposed: was proc idle time, now the request's
++		// recv->exec QUEUE time (slot_wait) in ns -- how long it waited for a
++		// free proc after the runner received it. The manager records it into
++		// RequestTrace.SlotWaitNs so speed_compare can split sent->executing
++		// into transport_out vs slot_wait. wait_start_/wait_end_ still track
++		// proc idle time but no longer feed this field.
++		if (recv_ms_) {
++			uint64 now_ms = current_time_ms();
++			exec.wait_duration = (now_ms > recv_ms_ ? now_ms - recv_ms_ : 0) * 1000 * 1000;
++			recv_ms_ = 0;
+ 		}
+ 
+ 		rpc::ExecutorMessageRawT raw;
+@@ -467,6 +596,23 @@ private:
+ 			num_calls = read_input(&prog_data);
+ 		auto data = finish_output(resp_mem_, id_, msg_->id, num_calls, elapsed, freshness_++, status, hanged, output);
+ 		conn_.Send(data.data(), data.size());
++		if (msg_->type == rpc::RequestType::Program && tl_a_us_)
++			++tl_runner_completed;
++
++		// [ExecTL] D: the result (including coverage) is on the host
++		// connection.
++		//
++		// [2026-07-21] Full sampling when the ttyS1 perf serial exists;
++		// without it nothing is collected or emitted (see common.h's copy of
++		// this condition). The old hash-fold (`(tl_req_id ^ (tl_req_id >> 4))
++		// & 3) == 0`, exactly 25%; chosen over `id % N` to avoid aliasing with
++		// however the host stripes ids across procs) is kept here, commented
++		// out, as the production-tuned rate to restore if full-sampling
++		// logging overhead ever needs to be dialed back down.
++		const uint64 tl_req_id = static_cast<uint64>(msg_->id);
++		if (tl_a_us_ && TlSerialFd() >= 0) // ((tl_req_id ^ (tl_req_id >> 4)) & 3) == 0
++			TlEmitRunner(id_, tl_req_id, tl_a_us_, TlNowUs());
++		tl_a_us_ = 0;
+ 
+ 		resp_mem_->Reset();
+ 		msg_.reset();
+@@ -580,6 +726,9 @@ private:
+ 	std::optional<ProcIDPool> proc_id_pool_;
+ 	std::vector<std::unique_ptr<Proc>> procs_;
+ 	std::deque<rpc::ExecRequestRawT> requests_;
++	// [RTT] parallel to requests_: runner-receive time (ms) per queued request,
++	// so slot_wait (recv->exec) survives the queue. Pushed/popped in lockstep.
++	std::deque<uint64> request_recv_ms_;
+ 	std::vector<std::string> leak_frames_;
+ 	int restarting_ = 0;
+ 	bool corpus_triaged_ = false;
+@@ -589,6 +738,8 @@ private:
+ 	std::vector<char*> char_leak_frames_;
+ #endif
+ 	ProcOpts proc_opts_{};
++	// [ExecTL] last guest CPU sample time (ms), ~5s cadence off the select tick.
++	uint64 last_cpu_sample_ms_ = 0;
+ 
+ 	friend std::ostream& operator<<(std::ostream& ss, const Runner& runner)
+ 	{
+@@ -619,6 +770,15 @@ private:
+ 		select.Wait(1000);
+ 		uint64 now = current_time_ms();
+ 
++		// [ExecTL] periodic guest CPU saturation sample.
++		if (now - last_cpu_sample_ms_ >= 5000) {
++			last_cpu_sample_ms_ = now;
++			if (TlSerialFd() >= 0) {
++				TlEmitCpuStat();
++				TlEmitRoleCpu();
++			}
++		}
++
+ 		if (select.Ready(conn_.FD())) {
+ 			rpc::HostMessageRawT raw;
+ 			conn_.Recv(raw);
+@@ -646,8 +806,9 @@ private:
+ 		for (auto& proc : procs_) {
+ 			proc->Ready(select, now, requests_.empty());
+ 			if (!IsScheduledForLeakCheck() && !requests_.empty()) {
+-				if (proc->Execute(requests_.front())) {
++				if (proc->Execute(requests_.front(), request_recv_ms_.front())) {
+ 					requests_.pop_front();
++					request_recv_ms_.pop_front();
+ #if GOOS_linux
+ 					++execs_since_leak_check_;
+ #endif
+@@ -801,13 +962,18 @@ private:
+ 			ExecuteBinary(msg);
+ 			return;
+ 		}
++		// [RTT] stamp runner-receive time now and carry it to whichever proc
++		// runs this request (directly here, or later via requests_) so it can
++		// report recv->exec slot_wait.
++		const uint64 recv_ms = current_time_ms();
+ 		if (!IsScheduledForLeakCheck()) {
+ 			for (auto& proc : procs_) {
+-				if (proc->Execute(msg))
++				if (proc->Execute(msg, recv_ms))
+ 					return;
+ 			}
+ 		}
+ 		requests_.push_back(std::move(msg));
++		request_recv_ms_.push_back(recv_ms);
+ 	}
+ 
+ 	void Handle(const rpc::SignalUpdateRawT& msg)
+diff --git a/pkg/flatrpc/conn.go b/pkg/flatrpc/conn.go
+index 377b9ef65..a7cc65c2d 100644
+--- a/pkg/flatrpc/conn.go
++++ b/pkg/flatrpc/conn.go
+@@ -12,6 +12,7 @@ import (
+ 	"reflect"
+ 	"slices"
+ 	"sync"
++	"time"
+ 	"unsafe"
+ 
+ 	flatbuffers "github.com/google/flatbuffers/go"
+@@ -94,6 +95,13 @@ type Conn struct {
+ 	data    []byte
+ 	hasData int
+ 	lastMsg int
++
++	// [RTT] wall time at which the size prefix of the message currently being
++	// received became available -- i.e. the instant the host first learned a
++	// message is arriving, before its body was read. Recv is single-goroutine
++	// (see the doc comment on Recv), so a plain field needs no synchronization.
++	// Read via LastHeaderRecvTime right after the corresponding Recv returns.
++	headerRecvTime time.Time
+ }
+ 
+ func NewConn(conn net.Conn) *Conn {
+@@ -161,6 +169,10 @@ func Recv[Raw RecvType[T], T any](c *Conn) (res *T, err0 error) {
+ 	if err := c.recv(sizePrefixSize); err != nil {
+ 		return nil, fmt.Errorf("failed to recv %T: %w", (*T)(nil), err)
+ 	}
++	// [RTT] the header is in: this task is known to be complete, but its body
++	// (coverage payload) has not been read yet. Splitting here is what makes
++	// the guest->host result transfer measurable separately from execution.
++	c.headerRecvTime = time.Now()
+ 	size := int(flatbuffers.GetSizePrefix(c.data, 0))
+ 	if size > maxMessageSize {
+ 		return nil, fmt.Errorf("message %T has too large size %v", (*T)(nil), size)
+@@ -172,6 +184,14 @@ func Recv[Raw RecvType[T], T any](c *Conn) (res *T, err0 error) {
+ 	return Parse[Raw](c.data[sizePrefixSize:c.lastMsg])
+ }
+ 
++// LastHeaderRecvTime returns the wall time at which the size prefix of the
++// most recently received message arrived -- i.e. before its body was read.
++// Valid only until the next Recv call, and must be read from the same
++// goroutine that calls Recv.
++func (c *Conn) LastHeaderRecvTime() time.Time {
++	return c.headerRecvTime
++}
++
+ // recv ensures that we have at least 'size' bytes received in c.data.
+ func (c *Conn) recv(size int) error {
+ 	need := size - c.hasData
+diff --git a/pkg/fuzzer/fuzzer.go b/pkg/fuzzer/fuzzer.go
+index 187725d4c..d8fe0e8fb 100644
+--- a/pkg/fuzzer/fuzzer.go
++++ b/pkg/fuzzer/fuzzer.go
+@@ -131,6 +131,31 @@ func (fuzzer *Fuzzer) executeWithFlags(executor queue.Executor, req *queue.Reque
+ }
+ 
+ func (fuzzer *Fuzzer) prepare(req *queue.Request, flags ProgFlags, attempt int) {
++	// [RTT trace, coarse comparison phase] prepare() is the single chokepoint
++	// that covers every request-construction path: fuzzer.enqueue() (queued
++	// candidate/triage/smash requests) AND fuzzer.genFuzz() (on-demand
++	// gen/mutate/collide-replaced requests returned directly via
++	// queue.Callback, which never goes through enqueue()/Submit() at all).
++	// CreatedUs is sticky (guarded) so a retried request (see processResult's
++	// candidate-retry path, which reuses the same *Request and calls
++	// prepare() again) keeps its true original creation time; EnqueuedUs is
++	// overwritten every call so per-attempt segments stay uncontaminated.
++	firstCall := req.Trace.CreatedUs == 0
++	if firstCall {
++		req.Trace.Sampled = queue.ShouldSampleTaskTrace(fuzzer.Config.TaskTraceSampleRate)
++	}
++	if req.Trace.Sampled {
++		now := queue.TraceNowUs()
++		if firstCall {
++			req.Trace.CreatedUs = now
++		} else {
++			// [RetryCount] a non-first prepare() call only happens via the
++			// candidate-retry path (fuzzer.enqueue() called again with the
++			// same *Request -- see processResult's return-false branch).
++			req.Trace.RetryCount++
++		}
++		req.Trace.EnqueuedUs = now
++	}
+ 	req.OnDone(func(req *queue.Request, res *queue.Result) bool {
+ 		return fuzzer.processResult(req, res, flags, attempt)
+ 	})
+@@ -230,6 +255,11 @@ type Config struct {
+ 	NewInputFilter func(call string) bool
+ 	PatchTest      bool
+ 	ModeKFuzzTest  bool
++	// [RTT trace, coarse comparison phase] 0 = off (default). See
++	// queue.ShouldSampleTaskTrace for rate semantics. Sampling decision is
++	// made once per logical task, in prepare() below, and stays fixed
++	// across any retry attempts of that same *queue.Request.
++	TaskTraceSampleRate uint32
+ }
+ 
+ func (fuzzer *Fuzzer) triageProgCall(p *prog.Prog, info *flatrpc.CallInfo, call int, triage *map[int]*triageCall) {
+diff --git a/pkg/fuzzer/queue/queue.go b/pkg/fuzzer/queue/queue.go
+index 20509dcb7..00cc37227 100644
+--- a/pkg/fuzzer/queue/queue.go
++++ b/pkg/fuzzer/queue/queue.go
+@@ -46,6 +46,12 @@ type Request struct {
+ 	// The restriction is soft since there can be only one executor at all or available right now.
+ 	Avoid []ExecutorID
+ 
++	// [RTT trace, coarse comparison phase] host-side pipeline timestamps, see
++	// RequestTrace. Populated only when task-trace sampling is enabled
++	// (-task-trace-sample-rate); zero-valued otherwise, matching every other
++	// "0 = unset" field on this struct.
++	Trace RequestTrace
++
+ 	// The callback will be called on request completion in the LIFO order.
+ 	// If it returns false, all further processing will be stopped.
+ 	// It allows wrappers to intercept Done() requests.
+@@ -59,6 +65,50 @@ type Request struct {
+ 	done   chan struct{}
+ }
+ 
++// RequestTrace holds host-side (single Go process) pipeline timestamps for one
++// Request, expressed as microseconds since an arbitrary per-process monotonic
++// epoch (see TraceNowUs) -- directly comparable to reFuzz's TaskTrace, which
++// uses the same steady_clock-relative-epoch convention.
++//
++// CreatedUs and FinalDoneUs are sticky (written at most once, guarded) so they
++// span the WHOLE logical task including any retries. EnqueuedUs/DequeuedUs/
++// SentUs/ExecutingUs/ResultReceivedUs/AttemptResultUs/Attempt are overwritten
++// on every retry attempt, so per-stage segments computed from them (e.g.
++// DequeuedUs - EnqueuedUs) always describe "this attempt" and are never
++// contaminated by an earlier attempt's dwell time. See docs on the
++// candidate-retry path in fuzzer.processResult (pkg/fuzzer/fuzzer.go) for why
++// retries reuse the same *Request and can call prepare()/Done() more than once.
++type RequestTrace struct {
++	Sampled     bool  // decided once, at the first prepare() call; sticky
++	CreatedUs   int64 // sticky: first prepare() call only
++	EnqueuedUs  int64 // overwritten every prepare() call
++	DequeuedUs  int64 // overwritten every time Next() returns this request
++	SentUs      int64 // overwritten every attempt
++	ExecutingUs int64 // overwritten every attempt
++	SlotWaitNs  int64 // [RTT] guest recv->exec queue time (ns) from ExecutingMessage.WaitDuration; overwritten every attempt
++	// CompletionObservedUs is the instant the host first learned this task had
++	// completed: the ExecResult message's size prefix had arrived, but its body
++	// (the coverage payload) had not been read yet. Splitting it out of
++	// ResultReceivedUs is what makes the guest->host result transfer measurable
++	// separately from execution. Semantic counterpart of reFuzz's
++	// completion_observed_host_ts_us. Overwritten every attempt.
++	CompletionObservedUs int64
++	ResultReceivedUs     int64 // overwritten when the host first accepts this attempt's ExecResult
++	AttemptResultUs      int64 // overwritten every handleExecResult call
++	Attempt              int32 // incremented every handleExecResult call; diagnostic only, NOT a
++	// reliable retry signal on its own -- see RetryCount
++	FinalDoneUs int64 // sticky: only set when Done() truly finalizes (reaches close(r.done))
++	// RetryCount is the authoritative "how many times has this logical task
++	// been resubmitted for ANY reason" counter: incremented both by
++	// prepare() (candidate-retry: fuzzer.processResult's return-false path
++	// re-enters prepare() via fuzzer.enqueue()) and by retryer.resubmit()
++	// (VM-crash/restart-retry, which bypasses prepare() entirely -- Runner.
++	// Shutdown() calls Request.Done() directly with Status=Crashed/
++	// Restarted, never going through handleExecResult, so Attempt above
++	// would silently undercount this path). 0 = never retried.
++	RetryCount int32
++}
++
+ type ExecutorID struct {
+ 	VM   int
+ 	Proc int
+@@ -80,18 +130,40 @@ func (r *Request) OnDone(cb DoneCallback) {
+ 	}
+ }
+ 
+-func (r *Request) Done(res *Result) {
++// Done finalizes the request with res. Return value (finalDoneUs) is
++// non-zero iff THIS call is the one that actually finalized the request
++// (reached close(r.done) below) AND Trace.Sampled is true; 0 otherwise
++// (either a retry was triggered by the callback chain, or tracing is off).
++//
++// [RTT trace] callers that need to know whether their specific Done() call
++// finalized the request (e.g. to decide whether a task-trace row is
++// "final") MUST use this return value, not read req.Trace.FinalDoneUs
++// afterwards: on a retry, the callback chain (e.g.
++// fuzzer.processResult -> fuzzer.enqueue -> prepare()) can resubmit req
++// before Done() even returns, and a DIFFERENT goroutine (another VM/Runner)
++// can then race to complete the NEXT attempt and set Trace.FinalDoneUs
++// before this goroutine gets back to reading it -- silently mislabeling a
++// non-final row as final. Returning the value computed atomically within
++// this call closes that race.
++func (r *Request) Done(res *Result) (finalDoneUs int64) {
+ 	if r.callback != nil {
+ 		if !r.callback(r, res) {
+-			return
++			return 0
+ 		}
+ 	}
+ 	if r.Stat != nil {
+ 		r.Stat.Add(1)
+ 	}
++	if r.Trace.Sampled {
++		if r.Trace.FinalDoneUs == 0 {
++			r.Trace.FinalDoneUs = TraceNowUs()
++		}
++		finalDoneUs = r.Trace.FinalDoneUs
++	}
+ 	r.initChannel()
+ 	r.result = res
+ 	close(r.done)
++	return finalDoneUs
+ }
+ 
+ var ErrRequestAborted = errors.New("context closed while waiting the result")
+diff --git a/pkg/fuzzer/queue/retry.go b/pkg/fuzzer/queue/retry.go
+index 186850b5b..a8713bece 100644
+--- a/pkg/fuzzer/queue/retry.go
++++ b/pkg/fuzzer/queue/retry.go
+@@ -37,13 +37,13 @@ func (r *retryer) done(req *Request, res *Result) bool {
+ 		return true
+ 	case Restarted:
+ 		// The input was on a restarted VM.
+-		r.pq.Submit(req)
++		r.resubmit(req)
+ 		return false
+ 	case Crashed:
+ 		// Retry important requests from crashed VMs once.
+ 		if req.Important && !req.onceCrashed {
+ 			req.onceCrashed = true
+-			r.pq.Submit(req)
++			r.resubmit(req)
+ 			return false
+ 		}
+ 		return true
+@@ -51,3 +51,24 @@ func (r *retryer) done(req *Request, res *Result) bool {
+ 		panic(fmt.Sprintf("unhandled status %v", res.Status))
+ 	}
+ }
++
++// resubmit requeues req for another dispatch attempt WITHOUT going through
++// fuzzer.prepare() (this package doesn't import pkg/fuzzer -- prepare() is
++// the higher-level chokepoint, this is the lower-level VM-crash/restart
++// retry path). EnqueuedUs is stamped here for the same reason prepare()
++// stamps it on every call: it must reflect "this attempt" entering the
++// executable-request lifecycle, not the original (possibly long-since-
++// crashed) attempt's enqueue time -- otherwise a resulting queue_wait
++// computation (DequeuedUs - EnqueuedUs) would include the entire
++// dispatch-to-crash-to-restart span as if it were queueing delay.
++// RetryCount is bumped here too: this path is reached via Runner.Shutdown()
++// calling Request.Done() directly with Status=Crashed/Restarted, which
++// bypasses handleExecResult entirely, so Attempt (only incremented there)
++// would silently miss this kind of retry.
++func (r *retryer) resubmit(req *Request) {
++	if req.Trace.Sampled {
++		req.Trace.EnqueuedUs = TraceNowUs()
++		req.Trace.RetryCount++
++	}
++	r.pq.Submit(req)
++}
+diff --git a/pkg/manager/http.go b/pkg/manager/http.go
+index 58ab7c092..46c43a7a2 100644
+--- a/pkg/manager/http.go
++++ b/pkg/manager/http.go
+@@ -104,6 +104,11 @@ func (serv *HTTPServer) Serve(ctx context.Context) error {
+ 	handle("/prio", serv.httpPrio)
+ 	handle("/rawcover", serv.httpRawCover)
+ 	handle("/rawcoverfiles", serv.httpRawCoverFiles)
++	// [coverage-compare export] symmetric set dumps for reFuzz cross-tool
++	// comparison (hex value per line). /rawcover above is the corpus raw-PC side.
++	handle("/corpussignal", serv.httpCorpusSignal)
++	handle("/maxsignal", serv.httpMaxSignal)
++	handle("/corpusrawpc", serv.httpCorpusRawPC)
+ 	handle("/stats", serv.httpStats)
+ 	handle("/subsystemcover", serv.httpSubsystemCover)
+ 	handle("/syscalls", serv.httpSyscalls)
+@@ -977,6 +982,64 @@ func (serv *HTTPServer) httpFilterPCs(w http.ResponseWriter, r *http.Request) {
+ 	serv.httpCoverCover(w, r, DoFilterPCs)
+ }
+ 
++// [coverage-compare export] symmetric set dumps for cross-tool comparison with
++// reFuzz's corpus_signal / all_signal exports. Each emits a sorted set, one
++// "0x%x" value per line — the same format as reFuzz's HashFeedbackStore dump —
++// so the offline set/count comparison reads both sides identically. Read-only and
++// computed on demand from existing in-memory structures: no fuzzing-hot-path cost,
++// and "off" just means the endpoint is never hit (the symmetric analog of reFuzz
++// gating its dump on an unset export path).
++//
++//	/corpussignal -> union of corpus inputs' signal   (corpus edge/signal domain)
++//	/maxsignal    -> fuzzer max signal ever observed  (all-exec edge/signal domain)
++//
++// These are syzkaller's edge-encoded signal values: COUNT-comparable to reFuzz's
++// edge sets but NOT set-comparable (different edge hash). The raw-PC domain stays
++// on /rawcover (corpus, canonicalized); syzkaller keeps no all-execution raw-PC
++// union, so there is deliberately no all_pc endpoint here.
++func (serv *HTTPServer) httpCorpusSignal(w http.ResponseWriter, r *http.Request) {
++	corpus := serv.Corpus.Load()
++	if corpus == nil {
++		http.Error(w, "the corpus information is not yet available", http.StatusInternalServerError)
++		return
++	}
++	serv.writeRawSignal(w, corpus.Signal().ToRaw())
++}
++
++func (serv *HTTPServer) httpMaxSignal(w http.ResponseWriter, r *http.Request) {
++	fz := serv.Fuzzer.Load()
++	if fz == nil {
++		http.Error(w, "the fuzzer is not yet available", http.StatusInternalServerError)
++		return
++	}
++	serv.writeRawSignal(w, fz.Cover.CopyMaxSignal().ToRaw())
++}
++
++// httpCorpusRawPC dumps the corpus raw-PC set (corpus.Cover() = the RAW KCOV PCs
++// as stored, NOT PreviousInstructionPC-canonicalized like /rawcover). This is the
++// truly symmetric counterpart to reFuzz's corpus_pc.txt (also raw KCOV PCs): both
++// are raw return-address PCs in the same space, so the offline set comparison is a
++// direct intersection with no instruction-length offset to reconcile. (/rawcover
++// stays available for the symbolized/canonicalized view.)
++func (serv *HTTPServer) httpCorpusRawPC(w http.ResponseWriter, r *http.Request) {
++	corpus := serv.Corpus.Load()
++	if corpus == nil {
++		http.Error(w, "the corpus information is not yet available", http.StatusInternalServerError)
++		return
++	}
++	serv.writeRawSignal(w, corpus.Cover())
++}
++
++func (serv *HTTPServer) writeRawSignal(w http.ResponseWriter, vals []uint64) {
++	slices.Sort(vals)
++	w.Header().Set("Content-Type", ctTextPlain)
++	var buf bytes.Buffer
++	for _, v := range vals {
++		fmt.Fprintf(&buf, "0x%x\n", v)
++	}
++	w.Write(buf.Bytes())
++}
++
+ func (serv *HTTPServer) collectDiffCrashes() (patchedOnly, both, inProgress *UIDiffTable) {
+ 	for _, item := range serv.allDiffCrashes() {
+ 		if item.PatchedOnly() {
+diff --git a/pkg/rpcserver/rpcserver.go b/pkg/rpcserver/rpcserver.go
+index 054c9e54e..1947b4bdd 100644
+--- a/pkg/rpcserver/rpcserver.go
++++ b/pkg/rpcserver/rpcserver.go
+@@ -55,6 +55,15 @@ type Config struct {
+ 
+ 	// RPCServer closes the channel once the machine check has begun. Used for fault injection during testing.
+ 	machineCheckStarted chan struct{}
++
++	// [RTT trace, coarse comparison phase] "" = off, mirrors -bench's own
++	// empty-means-off CLI flag convention (not part of mgrconfig.Config).
++	TaskTracePath string
++
++	// [fixed request stream] "" = off. When set, the async sink captures the
++	// input-only ordered program request stream for the fixed-workload
++	// performance replay (docs/plans/fixed-request-stream-performance-replay.md).
++	RequestStreamPath string
+ }
+ 
+ type RemoteConfig struct {
+@@ -62,6 +71,10 @@ type RemoteConfig struct {
+ 	Manager Manager
+ 	Stats   Stats
+ 	Debug   bool
++	// [RTT trace, coarse comparison phase] see Config.TaskTracePath above.
++	TaskTracePath string
++	// [fixed request stream] see Config.RequestStreamPath above.
++	RequestStreamPath string
+ }
+ 
+ type Manager interface {
+@@ -91,6 +104,14 @@ type server struct {
+ 	sysTarget *targets.Target
+ 	timeouts  targets.Timeouts
+ 	checker   *vminfo.Checker
++	// [RTT trace, coarse comparison phase] nil when TaskTracePath == "" or
++	// the file couldn't be opened (degrades gracefully, logs once). Shared
++	// across every Runner created below.
++	taskTrace *taskTraceSink
++	// [fixed request stream] nil when RequestStreamPath == "" or the temp file
++	// couldn't be opened. Shared across every Runner; armed after machine check
++	// and finalized when Serve returns.
++	requestStream *requestStreamSink
+ 
+ 	infoOnce         sync.Once
+ 	checkDone        atomic.Bool
+@@ -112,6 +133,7 @@ type server struct {
+ 
+ type Stats struct {
+ 	StatExecs            *stat.Val
++	StatExecCalls        *stat.Val
+ 	StatNumFuzzing       *stat.Val
+ 	StatVMRestarts       *stat.Val
+ 	StatModules          *stat.Val
+@@ -132,6 +154,12 @@ func NewNamedStats(name string) Stats {
+ 		StatExecs: stat.New("exec total"+suffix, "Total test program executions",
+ 			stat.Console, stat.Rate{}, stat.Prometheus("syz_exec_total"+name),
+ 		),
++		// Executed syscalls (CallFlagExecuted), not just programs. Lets
++		// -mode=corpus-run report executed syscalls/sec — the fair pure-execution
++		// throughput metric, symmetric with reFuzz worker's kCallFlagExecuted tally.
++		StatExecCalls: stat.New("exec calls total"+suffix, "Total executed test program syscalls",
++			stat.Console, stat.Rate{}, stat.Prometheus("syz_exec_calls_total"+name),
++		),
+ 		StatNumFuzzing: stat.New("fuzzing VMs"+suffix,
+ 			"Number of VMs that are currently fuzzing", stat.Graph("fuzzing VMs"),
+ 			stat.Link("/vms"+linkSuffix),
+@@ -190,6 +218,8 @@ func New(cfg *RemoteConfig) (Server, error) {
+ 		Slowdown:          cfg.Timeouts.Slowdown,
+ 		pcBase:            pcBase,
+ 		localModules:      cfg.LocalModules,
++		TaskTracePath:     cfg.TaskTracePath,
++		RequestStreamPath: cfg.RequestStreamPath,
+ 	}, cfg.Manager), nil
+ }
+ 
+@@ -199,17 +229,43 @@ func newImpl(cfg *Config, mgr Manager) *server {
+ 	cfg.Procs = min(cfg.Procs, prog.MaxPids)
+ 	checker := vminfo.New(&cfg.Config)
+ 	baseSource := queue.DynamicSource(checker)
++	var taskTrace *taskTraceSink
++	if cfg.TaskTracePath != "" {
++		var err error
++		taskTrace, err = newTaskTraceSink(cfg.TaskTracePath)
++		if err != nil {
++			// Degrade gracefully -- this is a coarse-comparison experimental
++			// feature, not worth aborting a whole fuzzing run over (unlike
++			// -bench's log.Fatalf, which predates this and errs stricter).
++			log.Logf(0, "%v", err)
++			taskTrace = nil
++		}
++	}
++	var requestStream *requestStreamSink
++	if cfg.RequestStreamPath != "" {
++		var err error
++		requestStream, err = newRequestStreamSink(cfg.RequestStreamPath, 0)
++		if err != nil {
++			// Degrade gracefully: a capture that can't even open its temp file
++			// just yields no stream (the run is still valid); it must never
++			// abort fuzzing or masquerade as a program error.
++			log.Logf(0, "%v", err)
++			requestStream = nil
++		}
++	}
+ 	return &server{
+-		cfg:         cfg,
+-		mgr:         mgr,
+-		target:      cfg.Target,
+-		sysTarget:   sysTarget,
+-		timeouts:    sysTarget.Timeouts(cfg.Slowdown),
+-		runners:     make(map[int]*Runner),
+-		checker:     checker,
+-		baseSource:  baseSource,
+-		execSource:  queue.Distribute(queue.Retry(baseSource)),
+-		onHandshake: make(chan *handshakeResult, 1),
++		cfg:           cfg,
++		mgr:           mgr,
++		target:        cfg.Target,
++		sysTarget:     sysTarget,
++		timeouts:      sysTarget.Timeouts(cfg.Slowdown),
++		runners:       make(map[int]*Runner),
++		checker:       checker,
++		baseSource:    baseSource,
++		execSource:    queue.Distribute(queue.Retry(baseSource)),
++		onHandshake:   make(chan *handshakeResult, 1),
++		taskTrace:     taskTrace,
++		requestStream: requestStream,
+ 
+ 		Stats: cfg.Stats,
+ 		runnerStats: &runnerStats{
+@@ -219,6 +275,7 @@ func newImpl(cfg *Config, mgr Manager) *server {
+ 			statExecutorRestarts:   cfg.Stats.StatExecutorRestarts,
+ 			statExecBufferTooSmall: queue.StatExecBufferTooSmall,
+ 			statExecs:              cfg.Stats.StatExecs,
++			statExecCalls:          cfg.Stats.StatExecCalls,
+ 			statNoExecRequests:     queue.StatNoExecRequests,
+ 			statNoExecDuration:     queue.StatNoExecDuration,
+ 		},
+@@ -226,6 +283,7 @@ func newImpl(cfg *Config, mgr Manager) *server {
+ }
+ 
+ func (serv *server) Close() error {
++	serv.taskTrace.Close()
+ 	return serv.serv.Close()
+ }
+ 
+@@ -242,6 +300,10 @@ func (serv *server) Listen() error {
+ var errFatal = errors.New("aborting RPC server")
+ 
+ func (serv *server) Serve(ctx context.Context) error {
++	// Keep the parent (shutdown) context: after g.Wait() the derived ctx is
++	// always cancelled, so only shutdownCtx.Err() distinguishes an intentional
++	// shutdown from a mid-run error below.
++	shutdownCtx := ctx
+ 	g, ctx := errgroup.WithContext(ctx)
+ 	g.Go(func() error {
+ 		return serv.serv.Serve(ctx, func(ctx context.Context, conn *flatrpc.Conn) error {
+@@ -264,7 +326,20 @@ func (serv *server) Serve(ctx context.Context) error {
+ 		// not from the per-connection one.
+ 		return serv.runCheck(ctx, info)
+ 	})
+-	return g.Wait()
++	err := g.Wait()
++	// [fixed request stream] The RPC server has stopped, so the measurement
++	// window is over. Publish the capture only on an intentional shutdown (the
++	// parent context was cancelled); a mid-run error means an abnormal exit, so
++	// the partial capture is discarded rather than published (plan §5.2). This
++	// is the single finalization point -- serv.Close() does not touch the sink.
++	if shutdownCtx.Err() != nil {
++		if cerr := serv.requestStream.Close(); cerr != nil {
++			log.Logf(0, "request-stream: %v", cerr)
++		}
++	} else {
++		serv.requestStream.Abort()
++	}
++	return err
+ }
+ 
+ func (serv *server) Port() int {
+@@ -484,6 +559,11 @@ func (serv *server) runCheck(ctx context.Context, info *handshakeResult) error {
+ 		return err
+ 	}
+ 	serv.baseSource.Store(newSource)
++	// [fixed request stream] Open the measurement window now that the real
++	// workload source is live. checker.Run above has already fully drained its
++	// own machine-check traffic (globs, feature-detection programs), so arming
++	// here captures exactly the fixed workload and none of the setup phase.
++	serv.requestStream.arm()
+ 	serv.checkDone.Store(true)
+ 	return nil
+ }
+@@ -547,6 +627,8 @@ func (serv *server) CreateInstance(id int, injectExec chan<- bool, updInfo dispa
+ 		filterSignal:  serv.cfg.FilterSignal,
+ 		debug:         serv.cfg.Debug,
+ 		debugTimeouts: serv.cfg.DebugTimeouts,
++		taskTrace:     serv.taskTrace,
++		requestStream: serv.requestStream,
+ 		sysTarget:     serv.sysTarget,
+ 		injectExec:    injectExec,
+ 		infoc:         make(chan chan []byte),
+diff --git a/pkg/rpcserver/runner.go b/pkg/rpcserver/runner.go
+index 007363c82..398e1ee34 100644
+--- a/pkg/rpcserver/runner.go
++++ b/pkg/rpcserver/runner.go
+@@ -18,6 +18,7 @@ import (
+ 	"github.com/google/syzkaller/pkg/log"
+ 	"github.com/google/syzkaller/pkg/osutil"
+ 	"github.com/google/syzkaller/pkg/report"
++	"github.com/google/syzkaller/pkg/requeststream"
+ 	"github.com/google/syzkaller/pkg/stat"
+ 	"github.com/google/syzkaller/prog"
+ 	"github.com/google/syzkaller/sys/targets"
+@@ -33,6 +34,8 @@ type Runner struct {
+ 	filterSignal  bool
+ 	debug         bool
+ 	debugTimeouts bool
++	taskTrace     *taskTraceSink
++	requestStream *requestStreamSink
+ 	sysTarget     *targets.Target
+ 	stats         *runnerStats
+ 	finished      chan bool
+@@ -56,6 +59,7 @@ type Runner struct {
+ 
+ type runnerStats struct {
+ 	statExecs              *stat.Val
++	statExecCalls          *stat.Val
+ 	statExecRetries        *stat.Val
+ 	statExecutorRestarts   *stat.Val
+ 	statExecBufferTooSmall *stat.Val
+@@ -179,6 +183,9 @@ func (runner *Runner) ConnectionLoop() error {
+ 			if req == nil {
+ 				break
+ 			}
++			if req.Trace.Sampled {
++				req.Trace.DequeuedUs = queue.TraceNowUs()
++			}
+ 			if err := runner.sendRequest(req); err != nil {
+ 				return err
+ 			}
+@@ -307,6 +314,32 @@ func (runner *Runner) sendRequest(req *queue.Request) error {
+ 			return nil
+ 		}
+ 		data = progData
++		if runner.requestStream != nil {
++			// [fixed request stream] Capture the input side of this program
++			// request. The stream stores the CANONICAL TEXT, not the
++			// SerializeForExec bytes dispatched just below: the exec form is
++			// lowered and one-way, so a replayer can only ever hold bytes and
++			// must bypass its own normal request path (see requeststream.Record).
++			// Text round-trips, so each replayer rebuilds its native program and
++			// lowers it with its own encoder, running the same code it runs when
++			// fuzzing.
++			//
++			// This is a second serialization on the dispatch path, deliberately.
++			// The whole dequeued->sent segment that contains it measures 40us
++			// mean / 240us p99 against a task RTT of tens of seconds (0.00%), so
++			// the cost is not observable in the measurement it enables.
++			// Serialize() returns a fresh buffer, so -- like allSignal -- the
++			// sink can reference it without copying.
++			runner.requestStream.capture(requeststream.Record{
++				RequestType:  requeststream.RequestTypeProgram,
++				ExecEnvFlags: uint64(opts.EnvFlags),
++				ExecFlags:    uint64(opts.ExecFlags),
++				SandboxArg:   opts.SandboxArg,
++				RequestFlags: uint64(flags),
++				AllSignal:    allSignal,
++				ProgText:     req.Prog.Serialize(),
++			})
++		}
+ 	case flatrpc.RequestTypeBinary:
+ 		fileData, err := os.ReadFile(req.BinaryFile)
+ 		if err != nil {
+@@ -317,9 +350,13 @@ func (runner *Runner) sendRequest(req *queue.Request) error {
+ 			return nil
+ 		}
+ 		data = fileData
++		// A non-program request inside the capture window would make the two
++		// systems run different workloads, so it invalidates the stream (§4.2).
++		runner.requestStream.invalidate("binary request in capture window")
+ 	case flatrpc.RequestTypeGlob:
+ 		data = append([]byte(req.GlobPattern), 0)
+ 		flags |= flatrpc.RequestFlagReturnOutput
++		runner.requestStream.invalidate("glob request in capture window")
+ 	default:
+ 		panic("unhandled request type")
+ 	}
+@@ -344,6 +381,9 @@ func (runner *Runner) sendRequest(req *queue.Request) error {
+ 		},
+ 	}
+ 	runner.requests[id] = req
++	if req.Trace.Sampled {
++		req.Trace.SentUs = queue.TraceNowUs()
++	}
+ 	return flatrpc.Send(runner.conn, msg)
+ }
+ 
+@@ -359,6 +399,15 @@ func (runner *Runner) handleExecutingMessage(msg *flatrpc.ExecutingMessage) erro
+ 	if proc < 0 || proc >= prog.MaxPids {
+ 		return fmt.Errorf("got bad proc id %v", proc)
+ 	}
++	if req.Trace.Sampled {
++		req.Trace.ExecutingUs = queue.TraceNowUs()
++		// [RTT] wait_duration is now the guest recv->exec queue time (slot_wait);
++		// record it (try==0 only; retries reuse the same proc) so the trace can
++		// split sent->executing into transport_out vs slot_wait.
++		if msg.Try == 0 {
++			req.Trace.SlotWaitNs = msg.WaitDuration
++		}
++	}
+ 	runner.stats.statExecs.Add(1)
+ 	if msg.Try == 0 {
+ 		if msg.WaitDuration != 0 {
+@@ -403,6 +452,12 @@ func (runner *Runner) handleExecResult(msg *flatrpc.ExecResult) error {
+ 		}
+ 		return fmt.Errorf("can't find executed request %v", msg.Id)
+ 	}
++	if req.Trace.Sampled {
++		// [RTT] header arrival (completion known, payload not yet read) vs now
++		// (payload fully in host memory) -- the two ends of the result transfer.
++		req.Trace.CompletionObservedUs = queue.TraceUsAt(runner.conn.LastHeaderRecvTime())
++		req.Trace.ResultReceivedUs = queue.TraceNowUs()
++	}
+ 	delete(runner.requests, msg.Id)
+ 	delete(runner.executing, msg.Id)
+ 	if req.Type == flatrpc.RequestTypeProgram && msg.Info != nil {
+@@ -412,6 +467,21 @@ func (runner *Runner) handleExecResult(msg *flatrpc.ExecResult) error {
+ 			})
+ 		}
+ 		msg.Info.Calls = msg.Info.Calls[:len(req.Prog.Calls)]
++		// Count actually-executed syscalls (CallFlagExecuted), not just the
++		// program. Drives executed syscalls/sec for -mode=corpus-run, symmetric
++		// with reFuzz worker's kCallFlagExecuted tally. Padded/un-run calls have
++		// Flags==0 (added above with Error:999) so they are not counted.
++		if runner.stats.statExecCalls != nil {
++			execCalls := 0
++			for _, call := range msg.Info.Calls {
++				if call.Flags&flatrpc.CallFlagExecuted != 0 {
++					execCalls++
++				}
++			}
++			if execCalls != 0 {
++				runner.stats.statExecCalls.Add(execCalls)
++			}
++		}
+ 		if msg.Info.Freshness == 0 {
+ 			runner.stats.statExecutorRestarts.Add(1)
+ 		}
+@@ -449,7 +519,29 @@ func (runner *Runner) handleExecResult(msg *flatrpc.ExecResult) error {
+ 		}
+ 		runner.hanged[msg.Id] = true
+ 	}
+-	req.Done(&queue.Result{
++	sampled := req.Trace.Sampled
++	if sampled {
++		req.Trace.AttemptResultUs = queue.TraceNowUs()
++		req.Trace.Attempt++
++	}
++	// [RTT trace, coarse comparison phase — Finding 1 fix] snapshot the
++	// trace BEFORE calling Done(): Done() runs the OnDone callback chain
++	// SYNCHRONOUSLY, and on a candidate retry (see processResult's
++	// return-false path) that chain calls back into prepare(), which
++	// overwrites the LIVE req.Trace.EnqueuedUs for the NEXT attempt --
++	// before this function ever gets to read it. Reading req.Trace after
++	// Done() returns would silently pair THIS attempt's AttemptResultUs
++	// with the NEXT attempt's EnqueuedUs in the same row. The snapshot
++	// (a plain value copy -- RequestTrace has no pointer/slice fields)
++	// freezes this attempt's view; only Final/FinalDoneUs get refreshed
++	// from the live req.Trace afterwards, since prepare() never touches
++	// those two fields (see taskTraceSink.writeRow's doc comment).
++	var snapshot queue.RequestTrace
++	reqType := req.Type
++	if sampled {
++		snapshot = req.Trace
++	}
++	finalDoneUs := req.Done(&queue.Result{
+ 		Executor: queue.ExecutorID{
+ 			VM:   runner.id,
+ 			Proc: int(msg.Proc),
+@@ -459,6 +551,22 @@ func (runner *Runner) handleExecResult(msg *flatrpc.ExecResult) error {
+ 		Output: slices.Clone(msg.Output),
+ 		Err:    resErr,
+ 	})
++	// [RTT trace, coarse comparison phase — Finding 1 fix, round 2] use
++	// Done()'s return value, NOT a post-hoc read of req.Trace.FinalDoneUs:
++	// on a retry, the callback chain can resubmit req before Done() even
++	// returns, and a DIFFERENT goroutine (another VM/Runner) can race to
++	// finalize the NEXT attempt before this goroutine reads req.Trace --
++	// mislabeling this (non-final) row as final. Done()'s return value is
++	// computed atomically within the same call that decided finalization,
++	// closing that race entirely.
++	if sampled && runner.taskTrace != nil {
++		snapshot.FinalDoneUs = finalDoneUs
++		var elapsedUs int64
++		if msg.Info != nil {
++			elapsedUs = int64(msg.Info.Elapsed / 1000)
++		}
++		runner.taskTrace.writeRow(reqType, snapshot, elapsedUs)
++	}
+ 	return nil
+ }
+ 
+diff --git a/syz-manager/manager.go b/syz-manager/manager.go
+index 97493e71c..296eec2b4 100644
+--- a/syz-manager/manager.go
++++ b/syz-manager/manager.go
+@@ -42,6 +42,7 @@ import (
+ 	"github.com/google/syzkaller/pkg/report"
+ 	crash_pkg "github.com/google/syzkaller/pkg/report/crash"
+ 	"github.com/google/syzkaller/pkg/repro"
++	"github.com/google/syzkaller/pkg/requeststream"
+ 	"github.com/google/syzkaller/pkg/rpcserver"
+ 	"github.com/google/syzkaller/pkg/runtest"
+ 	"github.com/google/syzkaller/pkg/signal"
+@@ -61,6 +62,51 @@ var (
+ 	flagBench  = flag.String("bench", "", "write execution statistics into this file periodically")
+ 	flagMode   = flag.String("mode", ModeFuzzing.Name, modesDescription())
+ 	flagTests  = flag.String("tests", "", "prefix to match test file names (for -mode run-tests)")
++	// [RTT trace, coarse comparison phase] see pkg/fuzzer/queue/task_trace.go
++	// and pkg/rpcserver/task_trace.go. Both empty/0 by default -- zero
++	// runtime cost unless explicitly opted into.
++	flagTaskTrace           = flag.String("task-trace", "", "write per-task RTT trace lines (JSONL) into this file")
++	flagTaskTraceSampleRate = flag.Uint("task-trace-sample-rate", 0,
++		"task trace sampling rate: 0 disables, 1 traces every task, N traces every Nth task")
++	// [fixed request stream] Opt-in capture of the input-only ordered program
++	// request stream for the fixed-workload performance replay. Empty by
++	// default -- zero runtime cost unless explicitly enabled.
++	flagRequestStream = flag.String("request-stream", "",
++		"capture the input-only fixed request stream into this file (fixed-workload performance replay)")
++	// [fixed request stream] The read side of the same format: -mode stream-replay
++	// consumes this file as its ONLY workload source, so both systems execute the
++	// identical ordered program sequence through their own normal request paths.
++	flagReplayStream = flag.String("replay-stream", "",
++		"replay this fixed request stream instead of fuzzing (requires -mode stream-replay)")
++	// [fixed request stream] Hold-before-teardown, symmetric with reFuzz's
++	// ReplayConfig. Stopping an in-guest perf recording and copying its data out
++	// takes tens of seconds, but the VM dies within ~10s of the replay finishing,
++	// so an external driver polling from outside can never win that race. The
++	// manager therefore publishes a marker once quiesced -- VM still alive -- and
++	// blocks until the driver releases it. Empty = no hold (plain exit).
++	flagReplayDrainedMarker = flag.String("replay-drained-marker", "",
++		"stream-replay: touch this path once the replay is quiesced and the VM is still alive")
++	flagReplayRelease = flag.String("replay-release", "",
++		"stream-replay: wait for this path to appear before tearing the VM down")
++	flagReplayHoldTimeout = flag.Duration("replay-hold-timeout", 30*time.Minute,
++		"stream-replay: give up waiting for -replay-release after this long (0 = forever)")
++	// [fixed request stream] syz-manager restarts every VM at Timeouts.VMRunningTime
++	// (sys/targets/targets.go: 1h by default, not settable from the manager config).
++	// That is right for fuzzing -- it bounds state accumulation -- but wrong for
++	// replaying a fixed workload, for two reasons:
++	//
++	//  1. Symmetry. reFuzz replays the whole stream inside ONE VM. If syzkaller
++	//     swaps in a fresh kernel partway through and reFuzz does not, the two
++	//     sides no longer ran the same experiment.
++	//  2. The in-guest perf recording dies with the VM, so a kernel profile can
++	//     never cover a replay that outlives one VM.
++	//
++	// And a replay WILL outlive it: syzkaller replays at roughly the rate it
++	// captured at, so a stream captured over ~1h takes ~1h to replay (observed
++	// 2026-07-25: killed at 85.6% of 34424 records, exactly 1h in).
++	// Only applied in stream-replay mode; fuzzing keeps the target's own value.
++	flagReplayVMRunningTime = flag.Duration("replay-vm-running-time", 0,
++		"stream-replay: override the per-VM running time so one VM covers the whole stream (0 = leave as configured)")
+ )
+ 
+ type Manager struct {
+@@ -157,6 +203,23 @@ var (
+ 		Description: `continuously run the corpus programs`,
+ 		LoadCorpus:  true,
+ 	}
++	ModeStreamReplay = &Mode{
++		Name: "stream-replay",
++		Description: `replay a fixed request stream and exit
++	Consumes the ordered program stream captured by -request-stream as the only
++	workload source: no generation, no mutation, no corpus, no triage. Both this
++	and reFuzz run the identical sequence through their own ordinary request
++	paths, which is what makes an execution-mechanism comparison controlled.
++	Requires -replay-stream. See docs/plans/fixed-request-stream-performance-replay.md.`,
++		CheckConfig: func(cfg *mgrconfig.Config) error {
++			// Checked here rather than at use time so a missing stream fails before
++			// any VM boots, not an hour into a run.
++			if *flagReplayStream == "" {
++				return fmt.Errorf("-mode stream-replay requires -replay-stream")
++			}
++			return nil
++		},
++	}
+ 	ModeRunTests = &Mode{
+ 		Name: "run-tests",
+ 		Description: `run unit tests
+@@ -185,6 +248,7 @@ var (
+ 		ModeSmokeTest,
+ 		ModeCorpusTriage,
+ 		ModeCorpusRun,
++		ModeStreamReplay,
+ 		ModeRunTests,
+ 		ModeIfaceProbe,
+ 	}
+@@ -247,6 +311,11 @@ func main() {
+ 			log.Fatalf("%v mode: %v", mode.Name, err)
+ 		}
+ 	}
++	if mode == ModeStreamReplay && *flagReplayVMRunningTime > 0 {
++		log.Logf(0, "stream replay: per-VM running time %v -> %v (one VM must cover the whole stream)",
++			cfg.Timeouts.VMRunningTime, *flagReplayVMRunningTime)
++		cfg.Timeouts.VMRunningTime = *flagReplayVMRunningTime
++	}
+ 	if !mode.UseDashboard {
+ 		cfg.DashboardClient = ""
+ 		cfg.HubClient = ""
+@@ -323,10 +392,12 @@ func RunManager(mode *Mode, cfg *mgrconfig.Config) {
+ 	// Create RPC server for fuzzers.
+ 	mgr.servStats = rpcserver.NewStats()
+ 	rpcCfg := &rpcserver.RemoteConfig{
+-		Config:  mgr.cfg,
+-		Manager: mgr,
+-		Stats:   mgr.servStats,
+-		Debug:   *flagDebug,
++		Config:            mgr.cfg,
++		Manager:           mgr,
++		Stats:             mgr.servStats,
++		Debug:             *flagDebug,
++		TaskTracePath:     *flagTaskTrace,
++		RequestStreamPath: *flagRequestStream,
+ 	}
+ 	mgr.serv, err = rpcserver.New(rpcCfg)
+ 	if err != nil {
+@@ -1233,15 +1304,16 @@ func (mgr *Manager) MachineChecked(features flatrpc.Feature,
+ 
+ 		rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+ 		fuzzerObj := fuzzer.NewFuzzer(context.Background(), &fuzzer.Config{
+-			Corpus:         mgr.corpus,
+-			Snapshot:       mgr.cfg.Snapshot,
+-			Coverage:       mgr.cfg.Cover,
+-			FaultInjection: features&flatrpc.FeatureFault != 0,
+-			Comparisons:    features&flatrpc.FeatureComparisons != 0,
+-			Collide:        true,
+-			EnabledCalls:   enabledSyscalls,
+-			NoMutateCalls:  mgr.cfg.NoMutateCalls,
+-			FetchRawCover:  mgr.cfg.RawCover,
++			Corpus:              mgr.corpus,
++			Snapshot:            mgr.cfg.Snapshot,
++			Coverage:            mgr.cfg.Cover,
++			FaultInjection:      features&flatrpc.FeatureFault != 0,
++			Comparisons:         features&flatrpc.FeatureComparisons != 0,
++			Collide:             true,
++			EnabledCalls:        enabledSyscalls,
++			NoMutateCalls:       mgr.cfg.NoMutateCalls,
++			FetchRawCover:       mgr.cfg.RawCover,
++			TaskTraceSampleRate: uint32(*flagTaskTraceSampleRate),
+ 			Logf: func(level int, msg string, args ...any) {
+ 				if level != 0 {
+ 					return
+@@ -1286,6 +1358,22 @@ func (mgr *Manager) MachineChecked(features flatrpc.Feature,
+ 			rnd:        rand.New(rand.NewSource(time.Now().UnixNano())),
+ 		}
+ 		return queue.DefaultOpts(ctx, opts), nil
++	case ModeStreamReplay:
++		// [fixed request stream] The stream is validated and fully decoded BEFORE
++		// any request is served, mirroring reFuzz's reader: a malformed stream must
++		// fail the run outright, never surface as a short workload that silently
++		// looks like a completed one.
++		data, err := os.ReadFile(*flagReplayStream)
++		if err != nil {
++			return nil, fmt.Errorf("failed to read replay stream: %w", err)
++		}
++		records, err := requeststream.Decode(data)
++		if err != nil {
++			return nil, fmt.Errorf("failed to decode replay stream %v: %w", *flagReplayStream, err)
++		}
++		log.Logf(0, "stream replay: loaded %v records from %v", len(records), *flagReplayStream)
++		ctx := newStreamReplayer(mgr.target, records, mgr.replayFinished)
++		return queue.DefaultOpts(ctx, opts), nil
+ 	case ModeRunTests:
+ 		ctx := &runtest.Context{
+ 			Dir:      filepath.Join(mgr.cfg.Syzkaller, "sys", mgr.cfg.Target.OS, "test"),
+@@ -1352,6 +1440,230 @@ func (cr *corpusRunner) Next() *queue.Request {
+ 	}
+ }
+ 
++// [fixed request stream] streamReplayer serves a pre-decoded, ordered request
++// stream as the manager's only workload source.
++//
++// Two invariants the reFuzz side had to learn the hard way and that are built in
++// here from the start:
++//
++//  1. A record that will not deserialize is NOT emitted, is counted, and is
++//     reported. Substituting anything for it -- a skip that is not counted, a
++//     fallback path -- would make the two systems run different workloads while
++//     still reporting a full replay.
++//  2. "The stream ran out" is NOT the same as "the replay finished". Requests
++//     still in flight can be lost (crashed VM, restarted worker), and a run that
++//     silently stops short is indistinguishable from a complete one unless
++//     completions are counted separately from emissions. So the finish condition
++//     is `exhausted AND completed == emitted`, and a stall in that final wait is
++//     reported as an incomplete replay rather than papered over.
++type streamReplayer struct {
++	target     *prog.Target
++	records    []requeststream.Record
++	onFinished func(replayed, emitted, undecodable int, complete bool)
++
++	mu          sync.Mutex
++	pos         int
++	emitted     int
++	completed   int
++	undecodable int
++	exhausted   bool
++	finished    bool
++}
++
++// How long the post-exhaustion wait may make no progress before the replay is
++// declared incomplete. Generous relative to a single program timeout: the point
++// is to catch requests that will never come back, not to race a slow tail.
++const replayDrainStallTimeout = 5 * time.Minute
++
++func newStreamReplayer(target *prog.Target, records []requeststream.Record,
++	onFinished func(replayed, emitted, undecodable int, complete bool)) *streamReplayer {
++	sr := &streamReplayer{target: target, records: records, onFinished: onFinished}
++	go sr.watchDrain()
++	return sr
++}
++
++func (sr *streamReplayer) Next() *queue.Request {
++	sr.mu.Lock()
++	defer sr.mu.Unlock()
++	for sr.pos < len(sr.records) {
++		rec := sr.records[sr.pos]
++		sr.pos++
++		p, err := sr.target.Deserialize(rec.ProgText, prog.NonStrict)
++		if err != nil {
++			sr.undecodable++
++			// Loud for the first few, then silent -- a systematically broken stream
++			// should not drown the log, but it must not be invisible either.
++			if sr.undecodable <= 10 {
++				log.Logf(0, "stream replay: record %v does not deserialize, not emitted: %v",
++					rec.Sequence, err)
++			}
++			continue
++		}
++		sr.emitted++
++		req := &queue.Request{
++			Type: flatrpc.RequestType(rec.RequestType),
++			Prog: p,
++			ExecOpts: flatrpc.ExecOpts{
++				EnvFlags:   flatrpc.ExecEnv(rec.ExecEnvFlags),
++				ExecFlags:  flatrpc.ExecFlag(rec.ExecFlags),
++				SandboxArg: rec.SandboxArg,
++			},
++			ReturnError:  rec.RequestFlags&uint64(flatrpc.RequestFlagReturnError) != 0,
++			ReturnOutput: rec.RequestFlags&uint64(flatrpc.RequestFlagReturnOutput) != 0,
++			// Important so a crashed VM retries the request instead of dropping it:
++			// a dropped request is a hole in the controlled workload.
++			Important: true,
++		}
++		for _, call := range rec.AllSignal {
++			req.ReturnAllSignal = append(req.ReturnAllSignal, int(call))
++		}
++		// [RTT] Stamp the two stages the fuzzer would normally own. Everything
++		// downstream (Dequeued/Sent/Executing/CompletionObserved/ResultReceived/
++		// FinalDone) is stamped by pkg/rpcserver and is mode-independent, but
++		// `Sampled` and `CreatedUs` are set in fuzzer.prepare() -- which this mode
++		// deliberately does not have. Without them the sampling decision is never
++		// made, `Sampled` stays false, and the whole RTT trace comes out empty
++		// while the -task-trace flags look like they took effect. Observed
++		// 2026-07-25: a complete 34424-record replay produced a zero-byte JSONL.
++		//
++		// CreatedUs and EnqueuedUs are the same instant here, and that is not a
++		// shortcut: a replayed request is minted only when the RPC server asks for
++		// one, so it never waits in a host-side queue. Host queue wait is therefore
++		// structurally zero in this mode -- a real property of replay, not a gap.
++		// It is also why RTT totals must not be compared between replay and a
++		// fuzzing capture (see docs/plans/execution-mechanism-experiments.md
++		// appendix A).
++		req.Trace.Sampled = queue.ShouldSampleTaskTrace(uint32(*flagTaskTraceSampleRate))
++		if req.Trace.Sampled {
++			now := queue.TraceNowUs()
++			req.Trace.CreatedUs = now
++			req.Trace.EnqueuedUs = now
++		}
++		req.OnDone(sr.onDone)
++		return req
++	}
++	if !sr.exhausted {
++		sr.exhausted = true
++		log.Logf(0, "stream replay: stream exhausted, %v emitted (%v undecodable), waiting for %v in flight",
++			sr.emitted, sr.undecodable, sr.emitted-sr.completed)
++	}
++	sr.maybeFinishLocked()
++	return nil
++}
++
++func (sr *streamReplayer) onDone(*queue.Request, *queue.Result) bool {
++	sr.mu.Lock()
++	defer sr.mu.Unlock()
++	sr.completed++
++	sr.maybeFinishLocked()
++	return true
++}
++
++func (sr *streamReplayer) maybeFinishLocked() {
++	if sr.finished || !sr.exhausted || sr.completed < sr.emitted {
++		return
++	}
++	sr.finished = true
++	go sr.onFinished(sr.completed, sr.emitted, sr.undecodable, true)
++}
++
++// watchDrain fires only after the stream is exhausted: while records are still
++// being served, "no completions for a while" just means the programs are slow.
++func (sr *streamReplayer) watchDrain() {
++	last, stalled := -1, time.Duration(0)
++	for range time.NewTicker(10 * time.Second).C {
++		sr.mu.Lock()
++		if sr.finished {
++			sr.mu.Unlock()
++			return
++		}
++		exhausted, completed, emitted, undecodable := sr.exhausted, sr.completed, sr.emitted, sr.undecodable
++		sr.mu.Unlock()
++		if !exhausted {
++			continue
++		}
++		if completed != last {
++			last, stalled = completed, 0
++			continue
++		}
++		stalled += 10 * time.Second
++		if stalled < replayDrainStallTimeout {
++			continue
++		}
++		sr.mu.Lock()
++		if sr.finished {
++			sr.mu.Unlock()
++			return
++		}
++		sr.finished = true
++		sr.mu.Unlock()
++		go sr.onFinished(completed, emitted, undecodable, false)
++		return
++	}
++}
++
++// holdForGuestProbeFetch publishes "quiesced, VM still alive" and blocks until an
++// external driver releases teardown (or the backstop expires). The marker's
++// CONTENT, not its existence, carries the verdict: the driver must be able to
++// tell a full replay from a truncated one, and both reach this point.
++//
++// Failure to create the marker is NOT fatal -- the run's results are already on
++// disk, so refusing to tear down would trade a finished run for a hang.
++func holdForGuestProbeFetch(complete bool) {
++	if *flagReplayDrainedMarker == "" {
++		return
++	}
++	verdict := "incomplete\n"
++	if complete {
++		verdict = "drained\n"
++	}
++	if err := os.WriteFile(*flagReplayDrainedMarker, []byte(verdict), 0o644); err != nil {
++		log.Logf(0, "stream replay: cannot publish drained marker %v: %v; proceeding to teardown",
++			*flagReplayDrainedMarker, err)
++		return
++	}
++	if *flagReplayRelease == "" {
++		log.Logf(0, "stream replay: drained marker published but no -replay-release; proceeding to teardown")
++		return
++	}
++	log.Logf(0, "stream replay: quiesced (%v); VM held for guest probe fetch, waiting on %v",
++		verdict[:len(verdict)-1], *flagReplayRelease)
++	began := time.Now()
++	for {
++		if _, err := os.Stat(*flagReplayRelease); err == nil {
++			log.Logf(0, "stream replay: released after %v", time.Since(began).Truncate(time.Second))
++			return
++		}
++		if *flagReplayHoldTimeout != 0 && time.Since(began) >= *flagReplayHoldTimeout {
++			log.Logf(0, "stream replay: no release after %v; tearing down anyway",
++				flagReplayHoldTimeout)
++			return
++		}
++		time.Sleep(200 * time.Millisecond)
++	}
++}
++
++// replayFinished is the single exit point for -mode stream-replay. A complete
++// replay exits 0; anything short exits non-zero, so a driver script cannot
++// mistake a truncated measurement for a full one.
++func (mgr *Manager) replayFinished(replayed, emitted, undecodable int, complete bool) {
++	// Hold BEFORE reporting the verdict: the driver needs the guest alive to fetch
++	// its probe, and it needs that whether the replay was complete or truncated --
++	// a truncated run's guest data is still worth keeping.
++	holdForGuestProbeFetch(complete && undecodable == 0)
++	if complete && undecodable == 0 {
++		log.Logf(0, "stream replay: complete, %v/%v records replayed", replayed, emitted)
++		mgr.exit("stream replay")
++		return
++	}
++	log.Logf(0, "stream replay INCOMPLETE: %v/%v emitted requests completed, %v records undecodable",
++		replayed, emitted, undecodable)
++	mgr.writeBench()
++	close(vm.Shutdown)
++	time.Sleep(10 * time.Second)
++	os.Exit(1)
++}
++
+ func (mgr *Manager) corpusMinimization() {
+ 	for range time.NewTicker(time.Minute).C {
+ 		mgr.mu.Lock()

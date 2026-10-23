@@ -1,0 +1,16 @@
+# Layer-3 milestone II.7 — safe-corpus manifest.
+#
+# Each line names a program (relative to the safe-corpus dir) that has
+# been reviewed to be non-destructive when run on the test host:
+#   - no fs writes outside ephemeral mmap'd scratch,
+#   - no kernel-state mutations visible to other processes,
+#   - no fd creation that leaks past program return,
+#   - no `exit*` syscalls (they would terminate the harness binary).
+#
+# Adding new programs requires manual review against the safety bar
+# above. Anything outside this list must be run under -allow-unsafe,
+# which is intended only for isolated VM/container environments.
+
+# Pure read-only identity queries.
+getpid_only
+getpid_chain

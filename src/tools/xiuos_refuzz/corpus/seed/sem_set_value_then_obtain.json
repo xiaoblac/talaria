@@ -1,0 +1,10 @@
+{
+  "name": "sem_set_value_then_obtain",
+  "suite": "COMMON_KERNEL",
+  "calls": [
+    {"api": "SEM_CREATE", "args": [0, 0]},
+    {"api": "SEM_SET_VALUE", "args": [0, 2]},
+    {"api": "SEM_OBTAIN", "args": [0, 0]},
+    {"api": "SEM_DELETE", "args": [0]}
+  ]
+}

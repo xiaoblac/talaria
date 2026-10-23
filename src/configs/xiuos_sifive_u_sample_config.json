@@ -1,0 +1,66 @@
+{
+  "_comment": "App-surface 面 fuzz config:rv64 k210-emulator 跑 stock qemu-system-riscv64 -machine sifive_u,分离构建 kernel.elf + 用户态 app.bin(经 -device loader 载入 USERSPACE)。被测面从内核内部 K-API pivot 到用户态 app(穿 ecall)。详见 docs/plans/xiuos-app-surface-fuzz-phase2.md。elf_path/app_bin_path 指向 xiuos-work 分离构建产物(S2 形式化构建后稳定);宪法 §3.8 实测产物在 /tmp/k210sep/{kernel.elf,app.bin}。",
+  "profile": "xiuos",
+  "work_dir": "/workspace/talaria/run/xiuos_sifive_u",
+  "retention": false,
+  "channel": {
+    "backend_id": "qemu_uart_sifive_u",
+    "n_workers": 1,
+    "wait_ready_timeout_ms": 60000,
+    "loop_interval_ms": 50,
+    "xiuos": {
+      "qemu_bin": "qemu-system-riscv64",
+      "machine": "sifive_u",
+      "mem": "256M",
+      "elf_path": "/workspace/xiuos-work/xiuos/Ubiquitous/XiZi_IIoT_Macro/build/XiZi-k210-emulator_kernel.elf",
+      "app_bin_path": "/workspace/xiuos-work/xiuos/Ubiquitous/XiZi_IIoT_Macro/build/XiZi-k210-emulator_app.bin",
+      "app_load_addr": "0x80101000",
+      "console_endpoint": "file:/tmp/xiuos_console.log",
+      "serial_host": "127.0.0.1",
+      "serial_port": 32986,
+      "connect_timeout_ms": 10000,
+      "frame_timeout_ms": 10000,
+      "heartbeat_timeout_ms": 500,
+      "poll_slice_ms": 10,
+      "program_timeout_ms": 1500,
+      "shutdown_grace_ms": 2000
+    }
+  },
+  "executor": {
+    "idle_sleep_us": 1000000,
+    "submit_strategy": { "name": "round_robin" },
+    "event_forward_strategy": { "blocking_timeout_ms": 1 },
+    "timeouts_ms": { "poll": 1, "pop": 5 }
+  },
+  "fuzzer": {
+    "high_watermark": 64,
+    "exec_timeout_ms": 15000,
+    "shutdown_grace_ms": 20000,
+    "corpus": { "capacity": 200000, "max_drain": 32 }
+  },
+  "target": {
+    "execution_mode": "kernel_syscall",
+    "coverage_mode": "kcov",
+    "sanitizer_mode": "none"
+  },
+  "coverage": {
+    "kcov": { "raw_pc": true }
+  },
+  "persistence": {
+    "corpus": {
+      "enable": true,
+      "load_on_start": true,
+      "dir": "/workspace/talaria/run/xiuos/corpus/wire"
+    },
+    "coverage": { "enable": true, "load_on_start": false },
+    "crash_repros_as_seeds": false
+  },
+  "logging": {
+    "enable": true,
+    "stream": true,
+    "console_summary": true
+  },
+  "phase1_run_limit_mode": "runtime",
+  "phase1_runtime_seconds": 180,
+  "phase1_total_tasks": 100000
+}

@@ -1,0 +1,17 @@
+[00:48:23] === f1_fullboot_m1536 (mem=1536) ===
+[00:49:57]   [f1_fullboot_m1536] boot=ok 
+[00:50:16] === f2_fullboot_m1024 (mem=1024) ===
+[00:51:50]   [f2_fullboot_m1024] boot=ok 
+[00:52:05] === f3_fullboot_m1024_fewdev (mem=1024) ===
+[00:53:08]   [f3_fullboot_m1024_fewdev] boot=ok 
+[00:53:22] === f4_fullboot_m768_fewdev (mem=768) ===
+[00:56:42]   [f4_fullboot_m768_fewdev] boot=timeout 
+
+========== full-boot at reduced -m (no-refactor ceiling) ==========
+config                         mem     boot  snapMiB  savevm   restore med ms
+f1_fullboot_m1536             1536       ok      730    2815 2145  [2270, 2145, 2163, 1841, 1833]
+f2_fullboot_m1024             1024       ok      602    1803 1509  [1536, 1509, 1632, 1304, 1302]
+f3_fullboot_m1024_fewdev      1024       ok      594    1621 1241  [1289, 1241, 1240, 1215, 1257]
+f4_fullboot_m768_fewdev        768  timeout        -       - boot timeout: 
+ref: full boot m2048 = 831 MiB / 2267 ms  |  shinit+fewdev m768 = 462 MiB / 1109 ms
+===================================================================

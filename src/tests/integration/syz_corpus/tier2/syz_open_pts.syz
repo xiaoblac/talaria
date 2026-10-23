@@ -1,0 +1,2 @@
+r0 = syz_open_pts(0xffffffffffffffff, 0x0)
+close(r0)

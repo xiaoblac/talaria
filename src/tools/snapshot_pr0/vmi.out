@@ -1,0 +1,38 @@
+[01:52:57] boot=ok
+[01:53:01] gva2gpa ret: 'gpa: 0x1aee8d00'
+[01:53:01] pmemsave OK gpa=0x1aee8d00 size=2097152 -> /workspace/talaria/tools/snapshot_pr0/run_vmi/logbuf.bin
+
+================ VMI probe result ================
+boot=True  dump=2097152 bytes
+console printk messages (serial.log)      : 193
+printk messages recovered from RAM(__log_buf): 2428
+RAM-only (in __log_buf, NEVER on console)  : 2428
+live kernel PC (frozen guest): RIP=0xffffffff8b5ee70e -> pv_native_safe_halt /workspace/syzkaller/kernel/linux-6.19.13/arch/x86/kernel/paravirt.c:82
+
+-- sample of messages VMI recovered that console NEVER showed --
+   !"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~
+   #0: Dummy 1 1
+   #1: Loopback 1 1
+   #2: Virtual MIDI Card 1 1
+   **   NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE   ****
+   ** If you see this message and you are not debugging    ****
+   ** This system shows unhashed kernel memory addresses   ****
+   ** Use hash_pointers=always to force this mode off      ****
+   ** administrator!                                       ****
+   ** might reduce the security of your system.            ****
+   ** the kernel, report this immediately to your system   ****
+   ** via the console, logs, and other interfaces. This    ****
+   ... CHAINHASH_SIZE:          52428888
+   ... CLASSHASH_SIZE:          409696
+   ... MAX_LOCKDEP_CHAINS:      104857676
+   ... MAX_LOCKDEP_ENTRIES:     104857676
+   ... MAX_LOCKDEP_KEYS:        819292
+   ... MAX_LOCKDEP_SUBCLASSES:  8 8
+   ... MAX_LOCK_DEPTH:          4848
+   ... bit width:                 4848
+   ... fixed-purpose bitmap:      000000000000000000
+   ... fixed-purpose counters:    0 0
+   ... generic bitmap:            000000000000000f0f
+   ... generic counters:          4 4
+   ... global_ctrl mask:          000000000000000f0f
+==================================================

@@ -1,0 +1,4 @@
+# refuzz minimize_golden v1
+# os=linux arch=amd64 mode=crash_snapshot call_index=2
+# call_count=1
+mount(0x0, 0x0, 0x0, 0x0, 0x0)

@@ -1,0 +1,571 @@
+// Copyright 2017 syzkaller project authors. All rights reserved.
+// Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file.
+
+#ifndef EXECUTOR_KVM_H
+#define EXECUTOR_KVM_H
+
+// x86-specific definitions.
+#if GOARCH_amd64
+#define X86_ADDR_TEXT 0x0000
+#define X86_ADDR_PD_IOAPIC 0x0000
+#define X86_ADDR_GDT 0x1000
+#define X86_ADDR_LDT 0x1800
+#define X86_ADDR_PML4 0x2000
+#define X86_ADDR_PDP 0x3000
+#define X86_ADDR_PD 0x4000
+#define X86_ADDR_STACK0 0x0f80
+#define X86_ADDR_VAR_HLT 0x2800
+#define X86_ADDR_VAR_SYSRET 0x2808
+#define X86_ADDR_VAR_SYSEXIT 0x2810
+#define X86_ADDR_VAR_IDT 0x3800
+#define X86_ADDR_VAR_TSS64 0x3a00
+#define X86_ADDR_VAR_TSS64_CPL3 0x3c00
+#define X86_ADDR_VAR_TSS16 0x3d00
+#define X86_ADDR_VAR_TSS16_2 0x3e00
+#define X86_ADDR_VAR_TSS16_CPL3 0x3f00
+#define X86_ADDR_VAR_TSS32 0x4800
+#define X86_ADDR_VAR_TSS32_2 0x4a00
+#define X86_ADDR_VAR_TSS32_CPL3 0x4c00
+#define X86_ADDR_VAR_TSS32_VM86 0x4e00
+#define X86_ADDR_VAR_VMXON_PTR 0x5f00
+#define X86_ADDR_VAR_VMCS_PTR 0x5f08
+#define X86_ADDR_VAR_VMEXIT_PTR 0x5f10
+#define X86_ADDR_VAR_VMWRITE_FLD 0x5f18
+#define X86_ADDR_VAR_VMWRITE_VAL 0x5f20
+#define X86_ADDR_VAR_VMXON 0x6000
+#define X86_ADDR_VAR_VMCS 0x7000
+#define X86_ADDR_VAR_VMEXIT_CODE 0x9000
+#define X86_ADDR_VAR_USER_CODE 0x9100
+#define X86_ADDR_VAR_USER_CODE2 0x9120
+
+// Zero page (0x0 - 0xfff) is deliberately unused.
+#define X86_SYZOS_ADDR_ZERO 0x0
+#define X86_SYZOS_ADDR_GDT 0x1000
+// PML4 for GPAs 0x0 - 0xffffffffffff.
+#define X86_SYZOS_ADDR_PML4 0x2000
+// PDP for GPAs 0x0 - 0x7fffffffff.
+#define X86_SYZOS_ADDR_PDP 0x3000
+#define X86_SYZOS_ADDR_VAR_IDT 0x25000
+#define X86_SYZOS_ADDR_VAR_TSS 0x26000
+// Dedicated page for passing configuration (memory map) to L1.
+#define X86_SYZOS_ADDR_BOOT_ARGS 0x2F000
+
+#define X86_SYZOS_ADDR_SMRAM 0x30000
+// Write to this page to trigger a page fault and stop KVM_RUN.
+#define X86_SYZOS_ADDR_EXIT 0x40000
+// Dedicated address within the exit page for the uexit command.
+#define X86_SYZOS_ADDR_UEXIT (X86_SYZOS_ADDR_EXIT + 256)
+#define X86_SYZOS_ADDR_DIRTY_PAGES 0x41000
+#define X86_SYZOS_ADDR_USER_CODE 0x50000
+// Location of the SYZOS guest code. Name shared with ARM64 SYZOS.
+#define SYZOS_ADDR_EXECUTOR_CODE 0x54000
+#define X86_SYZOS_ADDR_SCRATCH_CODE 0x58000
+#define X86_SYZOS_ADDR_STACK_BOTTOM 0x60000
+#define X86_SYZOS_ADDR_STACK0 0x60f80
+
+// Base address for all per-L1-VCPU regions.
+#define X86_SYZOS_PER_VCPU_REGIONS_BASE 0x400000
+// Size of the entire memory block allocated for a single L1 VCPU to manage its L2 VMs.
+// We need space for 1 VMXON page + 4 L2 VMs. Let's allocate 256KB per L1 VCPU for ample space.
+#define X86_SYZOS_L1_VCPU_REGION_SIZE 0x40000
+
+// Offsets within a single L1 VCPU's region.
+
+// Shared data for the L1 VCPU itself: 1 page for VMXON/HSAVE
+#define X86_SYZOS_L1_VCPU_OFFSET_VM_ARCH_SPECIFIC 0x0000
+// Base offset for the area containing the 4 L2 VM slots.
+#define X86_SYZOS_L1_VCPU_OFFSET_L2_VMS_AREA 0x1000
+
+// Global state page (Allocator offsets, etc).
+#define X86_SYZOS_ADDR_GLOBALS 0x17F000
+
+// Separated Page Table Pool in high memory.
+// Located above L2 VCPU regions.
+#define X86_SYZOS_ADDR_PT_POOL 0x180000
+#define X86_SYZOS_PT_POOL_SIZE 64
+
+// Layout of a single L2 VM's data block.
+
+// Size of the memory block for a single L2 VM.
+#define X86_SYZOS_L2_VM_REGION_SIZE 0x8000
+
+// Offsets within a single L2 VM's region.
+#define X86_SYZOS_L2_VM_OFFSET_VMCS_VMCB 0x0000
+#define X86_SYZOS_L2_VM_OFFSET_VM_STACK 0x1000
+#define X86_SYZOS_L2_VM_OFFSET_VM_CODE 0x2000
+// 4 pages for L2 EPT/NPT.
+#define X86_SYZOS_L2_VM_OFFSET_VM_PGTABLE 0x3000
+#define X86_SYZOS_L2_VM_OFFSET_MSR_BITMAP 0x7000
+
+// Subsequent addresses are shifted to accommodate all L1 VCPU regions.
+#define X86_SYZOS_ADDR_UNUSED 0x1000000
+#define X86_SYZOS_ADDR_IOAPIC 0xfec00000
+
+#define X86_SYZOS_ADDR_VMCS_VMCB(cpu, vm)                                            \
+	(X86_SYZOS_PER_VCPU_REGIONS_BASE + (cpu) * X86_SYZOS_L1_VCPU_REGION_SIZE +   \
+	 X86_SYZOS_L1_VCPU_OFFSET_L2_VMS_AREA + (vm) * X86_SYZOS_L2_VM_REGION_SIZE + \
+	 X86_SYZOS_L2_VM_OFFSET_VMCS_VMCB)
+
+#define X86_SYZOS_ADDR_VM_CODE(cpu, vm)                                              \
+	(X86_SYZOS_PER_VCPU_REGIONS_BASE + (cpu) * X86_SYZOS_L1_VCPU_REGION_SIZE +   \
+	 X86_SYZOS_L1_VCPU_OFFSET_L2_VMS_AREA + (vm) * X86_SYZOS_L2_VM_REGION_SIZE + \
+	 X86_SYZOS_L2_VM_OFFSET_VM_CODE)
+
+#define X86_SYZOS_ADDR_VM_STACK(cpu, vm)                                             \
+	(X86_SYZOS_PER_VCPU_REGIONS_BASE + (cpu) * X86_SYZOS_L1_VCPU_REGION_SIZE +   \
+	 X86_SYZOS_L1_VCPU_OFFSET_L2_VMS_AREA + (vm) * X86_SYZOS_L2_VM_REGION_SIZE + \
+	 X86_SYZOS_L2_VM_OFFSET_VM_STACK)
+
+#define X86_SYZOS_ADDR_VM_PGTABLE(cpu, vm)                                           \
+	(X86_SYZOS_PER_VCPU_REGIONS_BASE + (cpu) * X86_SYZOS_L1_VCPU_REGION_SIZE +   \
+	 X86_SYZOS_L1_VCPU_OFFSET_L2_VMS_AREA + (vm) * X86_SYZOS_L2_VM_REGION_SIZE + \
+	 X86_SYZOS_L2_VM_OFFSET_VM_PGTABLE)
+
+#define X86_SYZOS_ADDR_MSR_BITMAP(cpu, vm)                                           \
+	(X86_SYZOS_PER_VCPU_REGIONS_BASE + (cpu) * X86_SYZOS_L1_VCPU_REGION_SIZE +   \
+	 X86_SYZOS_L1_VCPU_OFFSET_L2_VMS_AREA + (vm) * X86_SYZOS_L2_VM_REGION_SIZE + \
+	 X86_SYZOS_L2_VM_OFFSET_MSR_BITMAP)
+
+#define X86_SYZOS_ADDR_VM_ARCH_SPECIFIC(cpu)                                       \
+	(X86_SYZOS_PER_VCPU_REGIONS_BASE + (cpu) * X86_SYZOS_L1_VCPU_REGION_SIZE + \
+	 X86_SYZOS_L1_VCPU_OFFSET_VM_ARCH_SPECIFIC)
+
+// SYZOS segment selectors
+#define X86_SYZOS_SEL_CODE 0x8
+#define X86_SYZOS_SEL_DATA 0x10
+#define X86_SYZOS_SEL_TSS64 0x18
+
+#define X86_CR0_PE 1ULL
+#define X86_CR0_MP (1ULL << 1)
+#define X86_CR0_EM (1ULL << 2)
+#define X86_CR0_TS (1ULL << 3)
+#define X86_CR0_ET (1ULL << 4)
+#define X86_CR0_NE (1ULL << 5)
+#define X86_CR0_WP (1ULL << 16)
+#define X86_CR0_AM (1ULL << 18)
+#define X86_CR0_NW (1ULL << 29)
+#define X86_CR0_CD (1ULL << 30)
+#define X86_CR0_PG (1ULL << 31)
+
+#define X86_CR4_VME 1ULL
+#define X86_CR4_PVI (1ULL << 1)
+#define X86_CR4_TSD (1ULL << 2)
+#define X86_CR4_DE (1ULL << 3)
+#define X86_CR4_PSE (1ULL << 4)
+#define X86_CR4_PAE (1ULL << 5)
+#define X86_CR4_MCE (1ULL << 6)
+#define X86_CR4_PGE (1ULL << 7)
+#define X86_CR4_PCE (1ULL << 8)
+#define X86_CR4_OSFXSR (1ULL << 9)
+#define X86_CR4_OSXMMEXCPT (1ULL << 10)
+#define X86_CR4_UMIP (1ULL << 11)
+#define X86_CR4_VMXE (1ULL << 13)
+#define X86_CR4_SMXE (1ULL << 14)
+#define X86_CR4_FSGSBASE (1ULL << 16)
+#define X86_CR4_PCIDE (1ULL << 17)
+#define X86_CR4_OSXSAVE (1ULL << 18)
+#define X86_CR4_SMEP (1ULL << 20)
+#define X86_CR4_SMAP (1ULL << 21)
+#define X86_CR4_PKE (1ULL << 22)
+
+#define X86_EFER_SCE 1ULL
+#define X86_EFER_LME (1ULL << 8)
+#define X86_EFER_LMA (1ULL << 10)
+#define X86_EFER_NXE (1ULL << 11)
+#define X86_EFER_SVME (1ULL << 12)
+#define X86_EFER_LMSLE (1ULL << 13)
+#define X86_EFER_FFXSR (1ULL << 14)
+#define X86_EFER_TCE (1ULL << 15)
+
+// 32-bit page directory entry bits
+#define X86_PDE32_PRESENT 1UL
+#define X86_PDE32_RW (1UL << 1)
+#define X86_PDE32_USER (1UL << 2)
+#define X86_PDE32_PS (1UL << 7)
+
+// 64-bit page * entry bits
+#define X86_PDE64_PRESENT 1
+#define X86_PDE64_RW (1ULL << 1)
+#define X86_PDE64_USER (1ULL << 2)
+#define X86_PDE64_ACCESSED (1ULL << 5)
+#define X86_PDE64_DIRTY (1ULL << 6)
+#define X86_PDE64_PS (1ULL << 7)
+#define X86_PDE64_G (1ULL << 8)
+
+// Intel-specific EPT Flags.
+#define EPT_MEMTYPE_WB (6ULL << 3)
+#define EPT_ACCESSED (1ULL << 8)
+#define EPT_DIRTY (1ULL << 9)
+
+#define X86_SEL_LDT (1 << 3)
+#define X86_SEL_CS16 (2 << 3)
+#define X86_SEL_DS16 (3 << 3)
+#define X86_SEL_CS16_CPL3 ((4 << 3) + 3)
+#define X86_SEL_DS16_CPL3 ((5 << 3) + 3)
+#define X86_SEL_CS32 (6 << 3)
+#define X86_SEL_DS32 (7 << 3)
+#define X86_SEL_CS32_CPL3 ((8 << 3) + 3)
+#define X86_SEL_DS32_CPL3 ((9 << 3) + 3)
+#define X86_SEL_CS64 (10 << 3)
+#define X86_SEL_DS64 (11 << 3)
+#define X86_SEL_CS64_CPL3 ((12 << 3) + 3)
+#define X86_SEL_DS64_CPL3 ((13 << 3) + 3)
+#define X86_SEL_CGATE16 (14 << 3)
+#define X86_SEL_TGATE16 (15 << 3)
+#define X86_SEL_CGATE32 (16 << 3)
+#define X86_SEL_TGATE32 (17 << 3)
+#define X86_SEL_CGATE64 (18 << 3)
+#define X86_SEL_CGATE64_HI (19 << 3)
+#define X86_SEL_TSS16 (20 << 3)
+#define X86_SEL_TSS16_2 (21 << 3)
+#define X86_SEL_TSS16_CPL3 ((22 << 3) + 3)
+#define X86_SEL_TSS32 (23 << 3)
+#define X86_SEL_TSS32_2 (24 << 3)
+#define X86_SEL_TSS32_CPL3 ((25 << 3) + 3)
+#define X86_SEL_TSS32_VM86 (26 << 3)
+#define X86_SEL_TSS64 (27 << 3)
+#define X86_SEL_TSS64_HI (28 << 3)
+#define X86_SEL_TSS64_CPL3 ((29 << 3) + 3)
+#define X86_SEL_TSS64_CPL3_HI (30 << 3)
+
+// Model-Specific Registers (MSRs).
+#define X86_MSR_IA32_FEATURE_CONTROL 0x3a
+#define X86_MSR_IA32_VMX_BASIC 0x480
+#define X86_MSR_IA32_SMBASE 0x9e
+#define X86_MSR_IA32_SYSENTER_CS 0x174
+#define X86_MSR_IA32_SYSENTER_ESP 0x175
+#define X86_MSR_IA32_SYSENTER_EIP 0x176
+#define X86_MSR_IA32_CR_PAT 0x277
+#define X86_MSR_CORE_PERF_GLOBAL_CTRL 0x38f
+#define X86_MSR_IA32_VMX_TRUE_PINBASED_CTLS 0x48d
+#define X86_MSR_IA32_VMX_TRUE_PROCBASED_CTLS 0x48e
+#define X86_MSR_IA32_VMX_TRUE_EXIT_CTLS 0x48f
+#define X86_MSR_IA32_VMX_TRUE_ENTRY_CTLS 0x490
+#define X86_MSR_IA32_EFER 0xc0000080
+#define X86_MSR_IA32_STAR 0xC0000081
+#define X86_MSR_IA32_LSTAR 0xC0000082
+#define X86_MSR_FS_BASE 0xc0000100
+#define X86_MSR_GS_BASE 0xc0000101
+#define X86_MSR_VM_HSAVE_PA 0xc0010117
+#define X86_MSR_IA32_VMX_PROCBASED_CTLS2 0x48B
+
+// VMX control bits
+#define RFLAGS_1_BIT (1ULL << 1)
+#define CPU_BASED_HLT_EXITING (1U << 7)
+#define CPU_BASED_RDTSC_EXITING (1U << 12)
+#define AR_TSS_AVAILABLE 0x0089
+#define SVM_ATTR_LDTR_UNUSABLE 0x0000
+#define VMX_AR_TSS_BUSY 0x008b
+#define VMX_AR_TSS_AVAILABLE 0x0089
+#define VMX_AR_LDTR_UNUSABLE 0x10000
+#define VM_ENTRY_IA32E_MODE (1U << 9)
+#define SECONDARY_EXEC_ENABLE_EPT (1U << 1)
+#define SECONDARY_EXEC_ENABLE_RDTSCP (1U << 3)
+#define VM_EXIT_HOST_ADDR_SPACE_SIZE (1U << 9)
+#define CPU_BASED_ACTIVATE_SECONDARY_CONTROLS (1U << 31)
+
+#define VMX_ACCESS_RIGHTS_P (1 << 7)
+#define VMX_ACCESS_RIGHTS_S (1 << 4)
+#define VMX_ACCESS_RIGHTS_TYPE_A (1 << 0)
+#define VMX_ACCESS_RIGHTS_TYPE_RW (1 << 1)
+#define VMX_ACCESS_RIGHTS_TYPE_E (1 << 3)
+#define VMX_ACCESS_RIGHTS_G (1 << 15)
+#define VMX_ACCESS_RIGHTS_DB (1 << 14)
+#define VMX_ACCESS_RIGHTS_L (1 << 13)
+
+// This is a 64-bit data/stack segment:
+// P=1, S=1, Type=3 (RW+Accessed), G=1, DB=1, L=0
+#define VMX_AR_64BIT_DATA_STACK (VMX_ACCESS_RIGHTS_P | VMX_ACCESS_RIGHTS_S |            \
+				 VMX_ACCESS_RIGHTS_TYPE_RW | VMX_ACCESS_RIGHTS_TYPE_A | \
+				 VMX_ACCESS_RIGHTS_G | VMX_ACCESS_RIGHTS_DB)
+
+// This is a 64-bit code segment:
+// P=1, S=1, Type=11 (Exec/Read+Accessed), G=1, DB=0, L=1
+#define VMX_AR_64BIT_CODE (VMX_ACCESS_RIGHTS_P | VMX_ACCESS_RIGHTS_S |            \
+			   VMX_ACCESS_RIGHTS_TYPE_E | VMX_ACCESS_RIGHTS_TYPE_RW | \
+			   VMX_ACCESS_RIGHTS_TYPE_A | VMX_ACCESS_RIGHTS_G |       \
+			   VMX_ACCESS_RIGHTS_L)
+
+// VMCS Control Fields.
+#define VMCS_VIRTUAL_PROCESSOR_ID 0x00000000
+#define VMCS_POSTED_INTR_NV 0x00000002
+#define VMCS_MSR_BITMAP 0x00002004
+#define VMCS_VMREAD_BITMAP 0x00002006
+#define VMCS_VMWRITE_BITMAP 0x00002008
+#define VMCS_EPT_POINTER 0x0000201a
+#define VMCS_LINK_POINTER 0x00002800
+#define VMCS_PIN_BASED_VM_EXEC_CONTROL 0x00004000
+#define VMCS_CPU_BASED_VM_EXEC_CONTROL 0x00004002
+#define VMCS_EXCEPTION_BITMAP 0x00004004
+#define VMCS_PAGE_FAULT_ERROR_CODE_MASK 0x00004006
+#define VMCS_PAGE_FAULT_ERROR_CODE_MATCH 0x00004008
+#define VMCS_CR3_TARGET_COUNT 0x0000400a
+#define VMCS_VM_EXIT_CONTROLS 0x0000400c
+#define VMCS_VM_EXIT_MSR_STORE_COUNT 0x0000400e
+#define VMCS_VM_EXIT_MSR_LOAD_COUNT 0x00004010
+#define VMCS_VM_ENTRY_CONTROLS 0x00004012
+#define VMCS_VM_ENTRY_MSR_LOAD_COUNT 0x00004014
+#define VMCS_VM_ENTRY_INTR_INFO_FIELD 0x00004016
+#define VMCS_TPR_THRESHOLD 0x0000401c
+#define VMCS_SECONDARY_VM_EXEC_CONTROL 0x0000401e
+#define VMCS_VM_INSTRUCTION_ERROR 0x00004400
+#define VMCS_VM_EXIT_REASON 0x00004402
+#define VMCS_VMX_PREEMPTION_TIMER_VALUE 0x0000482e
+#define VMCS_CR0_GUEST_HOST_MASK 0x00006000
+#define VMCS_CR4_GUEST_HOST_MASK 0x00006002
+#define VMCS_CR0_READ_SHADOW 0x00006004
+#define VMCS_CR4_READ_SHADOW 0x00006006
+
+// VMCS Host State Fields.
+#define VMCS_HOST_ES_SELECTOR 0x00000c00
+#define VMCS_HOST_CS_SELECTOR 0x00000c02
+#define VMCS_HOST_SS_SELECTOR 0x00000c04
+#define VMCS_HOST_DS_SELECTOR 0x00000c06
+#define VMCS_HOST_FS_SELECTOR 0x00000c08
+#define VMCS_HOST_GS_SELECTOR 0x00000c0a
+#define VMCS_HOST_TR_SELECTOR 0x00000c0c
+#define VMCS_HOST_IA32_PAT 0x00002c00
+#define VMCS_HOST_IA32_EFER 0x00002c02
+#define VMCS_HOST_IA32_PERF_GLOBAL_CTRL 0x00002c04
+#define VMCS_HOST_IA32_SYSENTER_CS 0x00004c00
+#define VMCS_HOST_CR0 0x00006c00
+#define VMCS_HOST_CR3 0x00006c02
+#define VMCS_HOST_CR4 0x00006c04
+#define VMCS_HOST_FS_BASE 0x00006c06
+#define VMCS_HOST_GS_BASE 0x00006c08
+#define VMCS_HOST_TR_BASE 0x00006c0a
+#define VMCS_HOST_GDTR_BASE 0x00006c0c
+#define VMCS_HOST_IDTR_BASE 0x00006c0e
+#define VMCS_HOST_IA32_SYSENTER_ESP 0x00006c10
+#define VMCS_HOST_IA32_SYSENTER_EIP 0x00006c12
+#define VMCS_HOST_RSP 0x00006c14
+#define VMCS_HOST_RIP 0x00006c16
+
+// VMCS Guest State Fields.
+#define VMCS_GUEST_INTR_STATUS 0x00000810
+#define VMCS_GUEST_PML_INDEX 0x00000812
+#define VMCS_GUEST_PHYSICAL_ADDRESS 0x00002400
+#define VMCS_GUEST_IA32_DEBUGCTL 0x00002802
+#define VMCS_GUEST_IA32_PAT 0x00002804
+#define VMCS_GUEST_IA32_EFER 0x00002806
+#define VMCS_GUEST_IA32_PERF_GLOBAL_CTRL 0x00002808
+#define VMCS_GUEST_ES_SELECTOR 0x00000800
+#define VMCS_GUEST_CS_SELECTOR 0x00000802
+#define VMCS_GUEST_SS_SELECTOR 0x00000804
+#define VMCS_GUEST_DS_SELECTOR 0x00000806
+#define VMCS_GUEST_FS_SELECTOR 0x00000808
+#define VMCS_GUEST_GS_SELECTOR 0x0000080a
+#define VMCS_GUEST_LDTR_SELECTOR 0x0000080c
+#define VMCS_GUEST_TR_SELECTOR 0x0000080e
+#define VMCS_GUEST_ES_LIMIT 0x00004800
+#define VMCS_GUEST_CS_LIMIT 0x00004802
+#define VMCS_GUEST_SS_LIMIT 0x00004804
+#define VMCS_GUEST_DS_LIMIT 0x00004806
+#define VMCS_GUEST_FS_LIMIT 0x00004808
+#define VMCS_GUEST_GS_LIMIT 0x0000480a
+#define VMCS_GUEST_LDTR_LIMIT 0x0000480c
+#define VMCS_GUEST_TR_LIMIT 0x0000480e
+#define VMCS_GUEST_GDTR_LIMIT 0x00004810
+#define VMCS_GUEST_IDTR_LIMIT 0x00004812
+#define VMCS_GUEST_ES_ACCESS_RIGHTS 0x00004814
+#define VMCS_GUEST_CS_ACCESS_RIGHTS 0x00004816
+#define VMCS_GUEST_SS_ACCESS_RIGHTS 0x00004818
+#define VMCS_GUEST_DS_ACCESS_RIGHTS 0x0000481a
+#define VMCS_GUEST_FS_ACCESS_RIGHTS 0x0000481c
+#define VMCS_GUEST_GS_ACCESS_RIGHTS 0x0000481e
+#define VMCS_GUEST_LDTR_ACCESS_RIGHTS 0x00004820
+#define VMCS_GUEST_TR_ACCESS_RIGHTS 0x00004822
+#define VMCS_GUEST_ACTIVITY_STATE 0x00004824
+#define VMCS_GUEST_INTERRUPTIBILITY_INFO 0x00004826
+#define VMCS_GUEST_SYSENTER_CS 0x0000482a
+#define VMCS_GUEST_CR0 0x00006800
+#define VMCS_GUEST_CR3 0x00006802
+#define VMCS_GUEST_CR4 0x00006804
+#define VMCS_GUEST_ES_BASE 0x00006806
+#define VMCS_GUEST_CS_BASE 0x00006808
+#define VMCS_GUEST_SS_BASE 0x0000680a
+#define VMCS_GUEST_DS_BASE 0x0000680c
+#define VMCS_GUEST_FS_BASE 0x0000680e
+#define VMCS_GUEST_GS_BASE 0x00006810
+#define VMCS_GUEST_LDTR_BASE 0x00006812
+#define VMCS_GUEST_TR_BASE 0x00006814
+#define VMCS_GUEST_GDTR_BASE 0x00006816
+#define VMCS_GUEST_IDTR_BASE 0x00006818
+#define VMCS_GUEST_DR7 0x0000681a
+#define VMCS_GUEST_RSP 0x0000681c
+#define VMCS_GUEST_RIP 0x0000681e
+#define VMCS_GUEST_RFLAGS 0x00006820
+#define VMCS_GUEST_PENDING_DBG_EXCEPTIONS 0x00006822
+#define VMCS_GUEST_SYSENTER_ESP 0x00006824
+#define VMCS_GUEST_SYSENTER_EIP 0x00006826
+
+// VMCB (Virtual Machine Control Block) Field Offsets
+// (From AMD64 Programmer's Manual Vol 2, Appendix B)
+
+// Control Area
+#define VMCB_CTRL_INTERCEPT_VEC3 0x0c
+#define VMCB_CTRL_INTERCEPT_VEC3_ALL (0xffffffff)
+#define VMCB_CTRL_INTERCEPT_VEC4 0x10
+// Bits 0-9: intercept VMRUN, VMMCALL, VMLOAD, VMSAVE, STGI, CLGI, SKINIT, RDTSCP, ICEBP, WBINVD.
+#define VMCB_CTRL_INTERCEPT_VEC4_ALL (0x3ff)
+
+#define VMCB_CTRL_ASID 0x058
+#define VMCB_EXIT_CODE 0x070
+#define VMCB_EXITINFO2 0x080
+
+// NP_ENABLE is actually 1 byte, but the 7 following bytes are reserved, so it's okay
+#define VMCB_CTRL_NP_ENABLE 0x090
+#define VMCB_CTRL_NPT_ENABLE_BIT 0
+
+#define VMCB_CTRL_N_CR3 0x0b0
+
+// Guest State Area (starts at 0x400)
+#define VMCB_GUEST_ES_SEL 0x400
+#define VMCB_GUEST_ES_ATTR 0x402
+#define VMCB_GUEST_ES_LIM 0x404
+#define VMCB_GUEST_ES_BASE 0x408
+#define VMCB_GUEST_CS_SEL 0x410
+#define VMCB_GUEST_CS_ATTR 0x412
+#define VMCB_GUEST_CS_LIM 0x414
+#define VMCB_GUEST_CS_BASE 0x418
+#define VMCB_GUEST_SS_SEL 0x420
+#define VMCB_GUEST_SS_ATTR 0x422
+#define VMCB_GUEST_SS_LIM 0x424
+#define VMCB_GUEST_SS_BASE 0x428
+#define VMCB_GUEST_DS_SEL 0x430
+#define VMCB_GUEST_DS_ATTR 0x432
+#define VMCB_GUEST_DS_LIM 0x434
+#define VMCB_GUEST_DS_BASE 0x438
+#define VMCB_GUEST_FS_SEL 0x440
+#define VMCB_GUEST_FS_ATTR 0x442
+#define VMCB_GUEST_FS_LIM 0x444
+#define VMCB_GUEST_FS_BASE 0x448
+#define VMCB_GUEST_GS_SEL 0x450
+#define VMCB_GUEST_GS_ATTR 0x452
+#define VMCB_GUEST_GS_LIM 0x454
+#define VMCB_GUEST_GS_BASE 0x458
+
+#define VMCB_GUEST_IDTR_SEL 0x480
+#define VMCB_GUEST_IDTR_ATTR 0x482
+#define VMCB_GUEST_IDTR_LIM 0x484
+#define VMCB_GUEST_IDTR_BASE 0x488
+#define VMCB_GUEST_GDTR_SEL 0x460
+#define VMCB_GUEST_GDTR_ATTR 0x462
+#define VMCB_GUEST_GDTR_LIM 0x464
+#define VMCB_GUEST_GDTR_BASE 0x468
+#define VMCB_GUEST_LDTR_SEL 0x470
+#define VMCB_GUEST_LDTR_ATTR 0x472
+#define VMCB_GUEST_LDTR_LIM 0x474
+#define VMCB_GUEST_LDTR_BASE 0x478
+#define VMCB_GUEST_TR_SEL 0x490
+#define VMCB_GUEST_TR_ATTR 0x492
+#define VMCB_GUEST_TR_LIM 0x494
+#define VMCB_GUEST_TR_BASE 0x498
+
+#define VMCB_GUEST_EFER 0x4d0
+#define VMCB_GUEST_CR4 0x548
+#define VMCB_GUEST_CR3 0x550
+#define VMCB_GUEST_CR0 0x558
+#define VMCB_GUEST_DR7 0x560
+#define VMCB_GUEST_DR6 0x568
+#define VMCB_GUEST_RFLAGS 0x570
+#define VMCB_GUEST_RIP 0x578
+#define VMCB_GUEST_RSP 0x5d8
+#define VMCB_GUEST_PAT 0x668
+#define VMCB_GUEST_DEBUGCTL 0x670
+#define VMCB_RAX 0x5f8
+
+// SVM Segment Attribute Defines
+#define SVM_ATTR_G (1 << 15)
+#define SVM_ATTR_DB (1 << 14)
+#define SVM_ATTR_L (1 << 13)
+#define SVM_ATTR_P (1 << 7)
+#define SVM_ATTR_S (1 << 4)
+// Type bits.
+#define SVM_ATTR_TYPE_A (1 << 0)
+#define SVM_ATTR_TYPE_RW (1 << 1)
+#define SVM_ATTR_TYPE_E (1 << 3)
+// Present, DPL=0, 64-bit TSS (Busy).
+#define SVM_ATTR_TSS_BUSY 0x008b
+
+// 64-bit Code Segment: P=1, S=1, Type=11 (E/R/A), L=1, G=1
+#define SVM_ATTR_64BIT_CODE                                             \
+	(SVM_ATTR_P | SVM_ATTR_S | SVM_ATTR_TYPE_E | SVM_ATTR_TYPE_RW | \
+	 SVM_ATTR_TYPE_A | SVM_ATTR_L | SVM_ATTR_G)
+
+// 64-bit Data Segment: P=1, S=1, Type=3 (RW/A), D/B=1, G=1
+#define SVM_ATTR_64BIT_DATA                                             \
+	(SVM_ATTR_P | SVM_ATTR_S | SVM_ATTR_TYPE_RW | SVM_ATTR_TYPE_A | \
+	 SVM_ATTR_DB | SVM_ATTR_G)
+
+#define X86_NEXT_INSN $0xbadc0de
+#define X86_PREFIX_SIZE 0xba1d
+#endif // x86-specific definitions.
+
+#define KVM_MAX_VCPU 4
+#define KVM_MAX_L2_VMS 4
+#define KVM_PAGE_SIZE (1 << 12)
+#define KVM_GUEST_PAGES 1024
+#define KVM_GUEST_MEM_SIZE (KVM_GUEST_PAGES * KVM_PAGE_SIZE)
+#define SZ_4K 0x00001000
+#define SZ_64K 0x00010000
+#define GENMASK_ULL(h, l)                   \
+	(((~0ULL) - (1ULL << (l)) + 1ULL) & \
+	 (~0ULL >> (63 - (h))))
+
+// ARM64 SYZOS definitions.
+#if GOARCH_arm64
+// GICv3 distributor address.
+#define ARM64_ADDR_GICD_BASE 0x08000000
+// GICv3 ITS address.
+#define ARM64_ADDR_GITS_BASE 0x08080000
+// GICv3 redistributor address.
+#define ARM64_ADDR_GICR_BASE 0x080a0000
+#define ARM64_ADDR_ITS_TABLES 0xc0000000
+// Write to this page to trigger a page fault and stop KVM_RUN.
+#define ARM64_ADDR_EXIT 0xdddd0000
+// Dedicated address within the exit page for the uexit command.
+#define ARM64_ADDR_UEXIT (ARM64_ADDR_EXIT + 256)
+// Two writable pages with KVM_MEM_LOG_DIRTY_PAGES explicitly set.
+#define ARM64_ADDR_DIRTY_PAGES 0xdddd1000
+#define ARM64_ADDR_USER_CODE 0xeeee0000
+// Location of the SYZOS guest code. Name shared with x86 SYZOS.
+#define SYZOS_ADDR_EXECUTOR_CODE 0xeeee8000
+#define ARM64_ADDR_SCRATCH_CODE 0xeeef0000
+#define ARM64_ADDR_EL1_STACK_BOTTOM 0xffff1000
+
+// GICv3 ITS tables.
+#define ITS_MAX_DEVICES 16
+#define ARM64_ADDR_ITS_DEVICE_TABLE (ARM64_ADDR_ITS_TABLES)
+#define ARM64_ADDR_ITS_COLL_TABLE (ARM64_ADDR_ITS_DEVICE_TABLE + SZ_64K)
+#define ARM64_ADDR_ITS_CMDQ_BASE (ARM64_ADDR_ITS_COLL_TABLE + SZ_64K)
+// 16 slots for ITT tables, typically used by devices 0-15.
+#define ARM64_ADDR_ITS_ITT_TABLES (ARM64_ADDR_ITS_CMDQ_BASE + SZ_64K)
+#define ARM64_ADDR_ITS_PROP_TABLE (ARM64_ADDR_ITS_ITT_TABLES + SZ_64K * ITS_MAX_DEVICES)
+#define ARM64_ADDR_ITS_PEND_TABLES (ARM64_ADDR_ITS_PROP_TABLE + SZ_64K)
+
+#endif // ARM64 SYZOS definitions
+
+// RISCV64 SYZOS definitions.
+#if GOARCH_riscv64
+// Core Local INTerruptor address.
+#define RISCV64_ADDR_CLINT 0x02000000
+// Platform Level Interrupt Controller address.
+#define RISCV64_ADDR_PLIC 0x0c000000
+// Write to this page to trigger a page fault and stop KVM_RUN.
+#define RISCV64_ADDR_EXIT 0x40000000
+// Two writable pages with KVM_MEM_LOG_DIRTY_PAGES explicitly set.
+#define RISCV64_ADDR_DIRTY_PAGES 0x40001000
+#define RISCV64_ADDR_USER_CODE 0x80000000
+// Location of the SYZOS guest code. Name shared with x86 SYZOS.
+#define SYZOS_ADDR_EXECUTOR_CODE 0x80008000
+#define RISCV64_ADDR_SCRATCH_CODE 0x80010000
+#define RISCV64_ADDR_STACK_BASE 0x80020000
+#define RISCV64_ADDR_EXCEPTION_VECTOR 0x00001000
+
+// Dedicated address within the exit page for the uexit command.
+#define RISCV64_ADDR_UEXIT (RISCV64_ADDR_EXIT + 256)
+
+#endif // RISCV64 SYZOS definitions
+
+#endif // EXECUTOR_KVM_H

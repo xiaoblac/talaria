@@ -1,0 +1,2265 @@
+{
+  "name": "common_kernel_sem_mutex",
+  "suite": "COMMON_KERNEL",
+  "version": 1,
+  "limits": {
+    "sem_slots": 4,
+    "mutex_slots": 4,
+    "msgq_slots": 4,
+    "event_slots": 4,
+    "timer_slots": 4,
+    "task_slots": 4,
+    "wq_slots": 4,
+    "max_calls": 16,
+    "timeouts": [
+      0,
+      1,
+      2,
+      10
+    ],
+    "small_values": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "msg_size_indices": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "max_msgs_indices": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "byte_pattern_indices": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "event_options_indices": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "events_pattern_indices": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "timer_ticks_indices": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "timer_mode_indices": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "dq_slots": 4,
+    "waitq_slots": 4,
+    "malloc_slots": 4,
+    "gb_slots": 4,
+    "ca_slots": 4,
+    "avl_slots": 4
+  },
+  "domains": {
+    "sem_slot": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "boundary": [
+        0,
+        3
+      ],
+      "invalid": [
+        4,
+        255
+      ]
+    },
+    "mutex_slot": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "boundary": [
+        0,
+        3
+      ],
+      "invalid": [
+        4,
+        255
+      ]
+    },
+    "timeout": {
+      "valid": [
+        0,
+        1,
+        2,
+        10
+      ],
+      "boundary": [
+        0,
+        10
+      ],
+      "invalid": [
+        4294967295
+      ]
+    },
+    "small_value": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "boundary": [
+        0,
+        3
+      ],
+      "invalid": [
+        4294967295
+      ]
+    },
+    "msgq_slot": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "boundary": [
+        0,
+        3
+      ],
+      "invalid": [
+        4,
+        255
+      ]
+    },
+    "msg_size_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "boundary": [
+        0,
+        3
+      ],
+      "invalid": [
+        4294967295
+      ]
+    },
+    "max_msgs_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "boundary": [
+        0,
+        3
+      ],
+      "invalid": [
+        4294967295
+      ]
+    },
+    "byte_pattern_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "boundary": [
+        0,
+        3
+      ],
+      "invalid": [
+        4294967295
+      ]
+    },
+    "event_slot": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "boundary": [
+        0,
+        3
+      ],
+      "invalid": [
+        4,
+        255
+      ]
+    },
+    "event_options_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "boundary": [
+        0,
+        3
+      ],
+      "invalid": [
+        4294967295
+      ]
+    },
+    "event_process_options_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "events_pattern_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "boundary": [
+        0,
+        3
+      ],
+      "invalid": [
+        4294967295
+      ]
+    },
+    "timer_slot": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "boundary": [
+        0,
+        3
+      ],
+      "invalid": [
+        4,
+        255
+      ]
+    },
+    "timer_ticks_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "boundary": [
+        0,
+        3
+      ],
+      "invalid": [
+        4294967295
+      ]
+    },
+    "timer_mode_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "boundary": [
+        0,
+        3
+      ],
+      "invalid": [
+        4294967295
+      ]
+    },
+    "task_slot": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "boundary": [
+        0,
+        3
+      ],
+      "invalid": [
+        4,
+        255
+      ]
+    },
+    "wq_slot": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "boundary": [
+        0,
+        3
+      ],
+      "invalid": [
+        4,
+        255
+      ]
+    },
+    "delay_ms_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "dq_node_count_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "dq_size_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "dq_timeout_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "waitq_ticks_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "malloc_size_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "calloc_count_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "gb_block_size_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "gb_block_count_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "gb_block_slot": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "gb_timeout_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "ca_slot": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "ca_length_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "ca_xfer_idx": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "ca_force": {
+      "valid": [
+        0,
+        1
+      ]
+    },
+    "avl_slot": {
+      "valid": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "avl_data_idx": {
+      "valid": [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+      ]
+    },
+    "cap_slot": {
+      "valid": [ 0, 1, 2, 3 ]
+    },
+    "cap_pid_idx": {
+      "valid": [ 0, 1, 2, 3 ]
+    },
+    "cap_type_idx": {
+      "valid": [ 0, 1, 2, 3 ]
+    }
+  },
+  "lifecycle": {
+    "semaphore": {
+      "slot_type": "sem_slot",
+      "states": [
+        "EMPTY",
+        "LIVE"
+      ],
+      "initial_state": "EMPTY",
+      "transitions": [
+        {
+          "rule": "sem_valid_lifecycle",
+          "from": "EMPTY",
+          "api": "SEM_CREATE",
+          "to": "LIVE"
+        },
+        {
+          "rule": "sem_obtain_live",
+          "from": "LIVE",
+          "api": "SEM_OBTAIN",
+          "to": "LIVE"
+        },
+        {
+          "rule": "sem_abandon_live",
+          "from": "LIVE",
+          "api": "SEM_ABANDON",
+          "to": "LIVE"
+        },
+        {
+          "rule": "sem_set_value_live",
+          "from": "LIVE",
+          "api": "SEM_SET_VALUE",
+          "to": "LIVE"
+        },
+        {
+          "rule": "sem_delete_live",
+          "from": "LIVE",
+          "api": "SEM_DELETE",
+          "to": "EMPTY"
+        },
+        {
+          "rule": "sem_invalid_empty_use",
+          "from": "EMPTY",
+          "api": "SEM_OBTAIN",
+          "to": "EMPTY",
+          "invalid": true
+        },
+        {
+          "rule": "sem_invalid_empty_abandon",
+          "from": "EMPTY",
+          "api": "SEM_ABANDON",
+          "to": "EMPTY",
+          "invalid": true
+        },
+        {
+          "rule": "sem_double_delete",
+          "from": "EMPTY",
+          "api": "SEM_DELETE",
+          "to": "EMPTY",
+          "invalid": true
+        }
+      ]
+    },
+    "mutex": {
+      "slot_type": "mutex_slot",
+      "states": [
+        "EMPTY",
+        "LIVE",
+        "OWNED"
+      ],
+      "initial_state": "EMPTY",
+      "transitions": [
+        {
+          "rule": "mutex_valid_lifecycle",
+          "from": "EMPTY",
+          "api": "MUTEX_CREATE",
+          "to": "LIVE"
+        },
+        {
+          "rule": "mutex_obtain_live",
+          "from": "LIVE",
+          "api": "MUTEX_OBTAIN",
+          "to": "OWNED"
+        },
+        {
+          "rule": "mutex_abandon_owned",
+          "from": "OWNED",
+          "api": "MUTEX_ABANDON",
+          "to": "LIVE"
+        },
+        {
+          "rule": "mutex_delete_live",
+          "from": "LIVE",
+          "api": "MUTEX_DELETE",
+          "to": "EMPTY"
+        },
+        {
+          "rule": "mutex_delete_owned",
+          "from": "OWNED",
+          "api": "MUTEX_DELETE",
+          "to": "EMPTY"
+        },
+        {
+          "rule": "mutex_invalid_empty_use",
+          "from": "EMPTY",
+          "api": "MUTEX_OBTAIN",
+          "to": "EMPTY",
+          "invalid": true
+        },
+        {
+          "rule": "mutex_invalid_empty_abandon",
+          "from": "EMPTY",
+          "api": "MUTEX_ABANDON",
+          "to": "EMPTY",
+          "invalid": true
+        },
+        {
+          "rule": "mutex_double_delete",
+          "from": "EMPTY",
+          "api": "MUTEX_DELETE",
+          "to": "EMPTY",
+          "invalid": true
+        }
+      ]
+    },
+    "msgq": {
+      "slot_type": "msgq_slot",
+      "states": [
+        "EMPTY",
+        "LIVE"
+      ],
+      "initial_state": "EMPTY",
+      "transitions": [
+        {
+          "rule": "msgq_valid_lifecycle",
+          "from": "EMPTY",
+          "api": "MSGQ_CREATE",
+          "to": "LIVE"
+        },
+        {
+          "rule": "msgq_send_live",
+          "from": "LIVE",
+          "api": "MSGQ_SEND",
+          "to": "LIVE"
+        },
+        {
+          "rule": "msgq_urgent_send_live",
+          "from": "LIVE",
+          "api": "MSGQ_URGENT_SEND",
+          "to": "LIVE"
+        },
+        {
+          "rule": "msgq_recv_live",
+          "from": "LIVE",
+          "api": "MSGQ_RECV",
+          "to": "LIVE"
+        },
+        {
+          "rule": "msgq_reinit_live",
+          "from": "LIVE",
+          "api": "MSGQ_REINIT",
+          "to": "LIVE"
+        },
+        {
+          "rule": "msgq_delete_live",
+          "from": "LIVE",
+          "api": "MSGQ_DELETE",
+          "to": "EMPTY"
+        },
+        {
+          "rule": "msgq_invalid_send_empty",
+          "from": "EMPTY",
+          "api": "MSGQ_SEND",
+          "to": "EMPTY",
+          "invalid": true
+        },
+        {
+          "rule": "msgq_invalid_urgent_send_empty",
+          "from": "EMPTY",
+          "api": "MSGQ_URGENT_SEND",
+          "to": "EMPTY",
+          "invalid": true
+        },
+        {
+          "rule": "msgq_invalid_recv_empty",
+          "from": "EMPTY",
+          "api": "MSGQ_RECV",
+          "to": "EMPTY",
+          "invalid": true
+        },
+        {
+          "rule": "msgq_invalid_reinit_empty",
+          "from": "EMPTY",
+          "api": "MSGQ_REINIT",
+          "to": "EMPTY",
+          "invalid": true
+        },
+        {
+          "rule": "msgq_double_delete",
+          "from": "EMPTY",
+          "api": "MSGQ_DELETE",
+          "to": "EMPTY",
+          "invalid": true
+        }
+      ]
+    },
+    "event": {
+      "slot_type": "event_slot",
+      "states": [
+        "EMPTY",
+        "LIVE"
+      ],
+      "initial_state": "EMPTY",
+      "transitions": [
+        {
+          "rule": "event_valid_lifecycle",
+          "from": "EMPTY",
+          "api": "EVENT_CREATE",
+          "to": "LIVE"
+        },
+        {
+          "rule": "event_trigger_live",
+          "from": "LIVE",
+          "api": "EVENT_TRIGGER",
+          "to": "LIVE"
+        },
+        {
+          "rule": "event_process_live",
+          "from": "LIVE",
+          "api": "EVENT_PROCESS",
+          "to": "LIVE"
+        },
+        {
+          "rule": "event_delete_live",
+          "from": "LIVE",
+          "api": "EVENT_DELETE",
+          "to": "EMPTY"
+        },
+        {
+          "rule": "event_invalid_trigger_empty",
+          "from": "EMPTY",
+          "api": "EVENT_TRIGGER",
+          "to": "EMPTY",
+          "invalid": true
+        },
+        {
+          "rule": "event_invalid_process_empty",
+          "from": "EMPTY",
+          "api": "EVENT_PROCESS",
+          "to": "EMPTY",
+          "invalid": true
+        },
+        {
+          "rule": "event_double_delete",
+          "from": "EMPTY",
+          "api": "EVENT_DELETE",
+          "to": "EMPTY",
+          "invalid": true
+        }
+      ]
+    },
+    "timer": {
+      "slot_type": "timer_slot",
+      "states": [
+        "EMPTY",
+        "CREATED",
+        "RUNNING"
+      ],
+      "initial_state": "EMPTY",
+      "transitions": [
+        {
+          "rule": "timer_valid_lifecycle",
+          "from": "EMPTY",
+          "api": "TIMER_CREATE",
+          "to": "CREATED"
+        },
+        {
+          "rule": "timer_start_created",
+          "from": "CREATED",
+          "api": "TIMER_START_RUN",
+          "to": "RUNNING"
+        },
+        {
+          "rule": "timer_quit_running",
+          "from": "RUNNING",
+          "api": "TIMER_QUIT_RUN",
+          "to": "CREATED"
+        },
+        {
+          "rule": "timer_modify_created",
+          "from": "CREATED",
+          "api": "TIMER_MODIFY",
+          "to": "CREATED"
+        },
+        {
+          "rule": "timer_modify_running",
+          "from": "RUNNING",
+          "api": "TIMER_MODIFY",
+          "to": "RUNNING"
+        },
+        {
+          "rule": "timer_delete_created",
+          "from": "CREATED",
+          "api": "TIMER_DELETE",
+          "to": "EMPTY"
+        },
+        {
+          "rule": "timer_delete_running",
+          "from": "RUNNING",
+          "api": "TIMER_DELETE",
+          "to": "EMPTY"
+        },
+        {
+          "rule": "timer_invalid_start_empty",
+          "from": "EMPTY",
+          "api": "TIMER_START_RUN",
+          "to": "EMPTY",
+          "invalid": true
+        },
+        {
+          "rule": "timer_invalid_quit_empty",
+          "from": "EMPTY",
+          "api": "TIMER_QUIT_RUN",
+          "to": "EMPTY",
+          "invalid": true
+        },
+        {
+          "rule": "timer_invalid_modify_empty",
+          "from": "EMPTY",
+          "api": "TIMER_MODIFY",
+          "to": "EMPTY",
+          "invalid": true
+        },
+        {
+          "rule": "timer_double_delete",
+          "from": "EMPTY",
+          "api": "TIMER_DELETE",
+          "to": "EMPTY",
+          "invalid": true
+        }
+      ]
+    },
+    "task": {
+      "slot_type": "task_slot",
+      "states": [
+        "EMPTY",
+        "BLOCKED",
+        "SUSPENDED",
+        "DELAYED"
+      ],
+      "initial_state": "EMPTY",
+      "transitions": [
+        {
+          "rule": "task_spawn_sem",
+          "from": "EMPTY",
+          "api": "TASK_SPAWN_BLOCK_SEM",
+          "to": "BLOCKED"
+        },
+        {
+          "rule": "task_spawn_event",
+          "from": "EMPTY",
+          "api": "TASK_SPAWN_BLOCK_EVENT",
+          "to": "BLOCKED"
+        },
+        {
+          "rule": "task_spawn_msgq",
+          "from": "EMPTY",
+          "api": "TASK_SPAWN_BLOCK_MSGQ_RECV",
+          "to": "BLOCKED"
+        },
+        {
+          "rule": "task_spawn_mutex_high",
+          "from": "EMPTY",
+          "api": "TASK_SPAWN_BLOCK_MUTEX_HIGH",
+          "to": "BLOCKED"
+        },
+        {
+          "rule": "task_spawn_self_suspend",
+          "from": "EMPTY",
+          "api": "TASK_SPAWN_SELF_SUSPEND",
+          "to": "SUSPENDED"
+        },
+        {
+          "rule": "task_spawn_self_delay",
+          "from": "EMPTY",
+          "api": "TASK_SPAWN_SELF_DELAY",
+          "to": "DELAYED"
+        },
+        {
+          "rule": "task_wakeup_suspended",
+          "from": "SUSPENDED",
+          "api": "TASK_WAKEUP",
+          "to": "DELAYED"
+        },
+        {
+          "rule": "task_terminate_blocked",
+          "from": "BLOCKED",
+          "api": "TASK_TERMINATE",
+          "to": "EMPTY"
+        },
+        {
+          "rule": "task_terminate_suspended",
+          "from": "SUSPENDED",
+          "api": "TASK_TERMINATE",
+          "to": "EMPTY"
+        },
+        {
+          "rule": "task_terminate_delayed",
+          "from": "DELAYED",
+          "api": "TASK_TERMINATE",
+          "to": "EMPTY"
+        },
+        {
+          "rule": "task_prio_set_blocked",
+          "from": "BLOCKED",
+          "api": "TASK_PRIO_SET",
+          "to": "BLOCKED"
+        },
+        {
+          "rule": "task_prio_set_suspended",
+          "from": "SUSPENDED",
+          "api": "TASK_PRIO_SET",
+          "to": "SUSPENDED"
+        },
+        {
+          "rule": "task_prio_set_delayed",
+          "from": "DELAYED",
+          "api": "TASK_PRIO_SET",
+          "to": "DELAYED"
+        },
+        {
+          "rule": "task_spawn_waitq",
+          "from": "EMPTY",
+          "api": "WAITQ_SPAWN_WAIT",
+          "to": "BLOCKED"
+        }
+      ]
+    },
+    "wq": {
+      "slot_type": "wq_slot",
+      "states": [
+        "EMPTY",
+        "LIVE"
+      ],
+      "initial_state": "EMPTY",
+      "transitions": [
+        {
+          "rule": "wq_create",
+          "from": "EMPTY",
+          "api": "WQ_CREATE",
+          "to": "LIVE"
+        },
+        {
+          "rule": "wq_deinit",
+          "from": "LIVE",
+          "api": "WQ_DEINIT",
+          "to": "EMPTY"
+        },
+        {
+          "rule": "wq_submit_live",
+          "from": "LIVE",
+          "api": "WQ_SUBMIT",
+          "to": "LIVE"
+        },
+        {
+          "rule": "wq_submit_delayed_live",
+          "from": "LIVE",
+          "api": "WQ_SUBMIT_DELAYED",
+          "to": "LIVE"
+        },
+        {
+          "rule": "wq_invalid_deinit_empty",
+          "from": "EMPTY",
+          "api": "WQ_DEINIT",
+          "to": "EMPTY",
+          "invalid": true
+        },
+        {
+          "rule": "wq_invalid_submit_empty",
+          "from": "EMPTY",
+          "api": "WQ_SUBMIT",
+          "to": "EMPTY",
+          "invalid": true
+        },
+        {
+          "rule": "wq_invalid_submit_delayed_empty",
+          "from": "EMPTY",
+          "api": "WQ_SUBMIT_DELAYED",
+          "to": "EMPTY",
+          "invalid": true
+        }
+      ]
+    },
+    "dq": {
+      "slot_type": "dq_slot",
+      "initial_state": "EMPTY",
+      "states": [
+        "EMPTY",
+        "LIVE"
+      ],
+      "transitions": [
+        {
+          "rule": "dq_init",
+          "from": "EMPTY",
+          "api": "DQ_INIT",
+          "to": "LIVE"
+        },
+        {
+          "rule": "dq_deinit",
+          "from": "LIVE",
+          "api": "DQ_DEINIT",
+          "to": "EMPTY"
+        },
+        {
+          "rule": "dq_reinit",
+          "from": "LIVE",
+          "api": "DQ_INIT",
+          "to": "LIVE"
+        },
+        {
+          "rule": "dq_push_live",
+          "from": "LIVE",
+          "api": "DQ_PUSH",
+          "to": "LIVE"
+        },
+        {
+          "rule": "dq_pop_live",
+          "from": "LIVE",
+          "api": "DQ_POP",
+          "to": "LIVE"
+        },
+        {
+          "rule": "dq_peek_live",
+          "from": "LIVE",
+          "api": "DQ_PEEK",
+          "to": "LIVE"
+        }
+      ]
+    },
+    "waitq": {
+      "slot_type": "waitq_slot",
+      "initial_state": "EMPTY",
+      "states": [
+        "EMPTY",
+        "LIVE"
+      ],
+      "transitions": [
+        {
+          "rule": "waitq_init",
+          "from": "EMPTY",
+          "api": "WAITQ_INIT",
+          "to": "LIVE"
+        },
+        {
+          "rule": "waitq_reinit",
+          "from": "LIVE",
+          "api": "WAITQ_INIT",
+          "to": "LIVE"
+        },
+        {
+          "rule": "waitq_wake_live",
+          "from": "LIVE",
+          "api": "WAITQ_WAKE",
+          "to": "LIVE"
+        }
+      ]
+    },
+    "malloc": {
+      "slot_type": "malloc_slot",
+      "initial_state": "EMPTY",
+      "states": [
+        "EMPTY",
+        "ALLOCATED"
+      ],
+      "transitions": [
+        {
+          "rule": "malloc_alloc",
+          "from": "EMPTY",
+          "api": "MALLOC",
+          "to": "ALLOCATED"
+        },
+        {
+          "rule": "calloc_alloc",
+          "from": "EMPTY",
+          "api": "CALLOC",
+          "to": "ALLOCATED"
+        },
+        {
+          "rule": "malloc_realloc_from_empty",
+          "from": "EMPTY",
+          "api": "REALLOC",
+          "to": "ALLOCATED"
+        },
+        {
+          "rule": "malloc_remalloc",
+          "from": "ALLOCATED",
+          "api": "MALLOC",
+          "to": "ALLOCATED"
+        },
+        {
+          "rule": "calloc_recalloc",
+          "from": "ALLOCATED",
+          "api": "CALLOC",
+          "to": "ALLOCATED"
+        },
+        {
+          "rule": "malloc_realloc",
+          "from": "ALLOCATED",
+          "api": "REALLOC",
+          "to": "ALLOCATED"
+        },
+        {
+          "rule": "malloc_free",
+          "from": "ALLOCATED",
+          "api": "FREE",
+          "to": "EMPTY"
+        }
+      ]
+    },
+    "gb": {
+      "slot_type": "gb_slot",
+      "initial_state": "EMPTY",
+      "states": [
+        "EMPTY",
+        "LIVE"
+      ],
+      "transitions": [
+        {
+          "rule": "gb_create",
+          "from": "EMPTY",
+          "api": "GB_CREATE",
+          "to": "LIVE"
+        },
+        {
+          "rule": "gb_recreate",
+          "from": "LIVE",
+          "api": "GB_CREATE",
+          "to": "LIVE"
+        },
+        {
+          "rule": "gb_alloc",
+          "from": "LIVE",
+          "api": "GB_ALLOC",
+          "to": "LIVE"
+        },
+        {
+          "rule": "gb_free",
+          "from": "LIVE",
+          "api": "GB_FREE",
+          "to": "LIVE"
+        },
+        {
+          "rule": "gb_delete",
+          "from": "LIVE",
+          "api": "GB_DELETE",
+          "to": "EMPTY"
+        }
+      ]
+    },
+    "ca": {
+      "slot_type": "ca_slot",
+      "initial_state": "EMPTY",
+      "states": [
+        "EMPTY",
+        "LIVE"
+      ],
+      "transitions": [
+        {
+          "rule": "ca_init",
+          "from": "EMPTY",
+          "api": "CA_INIT",
+          "to": "LIVE"
+        },
+        {
+          "rule": "ca_reinit",
+          "from": "LIVE",
+          "api": "CA_INIT",
+          "to": "LIVE"
+        },
+        {
+          "rule": "ca_write",
+          "from": "LIVE",
+          "api": "CA_WRITE",
+          "to": "LIVE"
+        },
+        {
+          "rule": "ca_read",
+          "from": "LIVE",
+          "api": "CA_READ",
+          "to": "LIVE"
+        },
+        {
+          "rule": "ca_reset",
+          "from": "LIVE",
+          "api": "CA_RESET",
+          "to": "LIVE"
+        },
+        {
+          "rule": "ca_get_data_length",
+          "from": "LIVE",
+          "api": "CA_GET_DATA_LENGTH",
+          "to": "LIVE"
+        },
+        {
+          "rule": "ca_release",
+          "from": "LIVE",
+          "api": "CA_RELEASE",
+          "to": "EMPTY"
+        }
+      ]
+    },
+    "avl": {
+      "slot_type": "avl_slot",
+      "initial_state": "EMPTY",
+      "states": [
+        "EMPTY",
+        "LIVE"
+      ],
+      "transitions": [
+        {
+          "rule": "avl_insert_first",
+          "from": "EMPTY",
+          "api": "AVL_INSERT",
+          "to": "LIVE"
+        },
+        {
+          "rule": "avl_insert",
+          "from": "LIVE",
+          "api": "AVL_INSERT",
+          "to": "LIVE"
+        },
+        {
+          "rule": "avl_delete",
+          "from": "LIVE",
+          "api": "AVL_DELETE",
+          "to": "LIVE"
+        },
+        {
+          "rule": "avl_modify",
+          "from": "LIVE",
+          "api": "AVL_MODIFY",
+          "to": "LIVE"
+        },
+        {
+          "rule": "avl_search",
+          "from": "LIVE",
+          "api": "AVL_SEARCH",
+          "to": "LIVE"
+        },
+        {
+          "rule": "avl_count",
+          "from": "LIVE",
+          "api": "AVL_COUNT",
+          "to": "LIVE"
+        },
+        {
+          "rule": "avl_check",
+          "from": "LIVE",
+          "api": "AVL_CHECK",
+          "to": "LIVE"
+        }
+      ]
+    }
+  },
+  "apis": [
+    {
+      "name": "SEM_CREATE",
+      "api_id": "SEM_CREATE",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "sem_slot"
+        },
+        {
+          "name": "initial_value",
+          "type": "small_value"
+        }
+      ],
+      "effect": "Stores KSemaphoreCreate(initial_value) result in sem slot."
+    },
+    {
+      "name": "SEM_DELETE",
+      "api_id": "SEM_DELETE",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "sem_slot"
+        }
+      ],
+      "effect": "Deletes semaphore id stored in sem slot.",
+      "wakes_pend_list": "sem",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "SEM_OBTAIN",
+      "api_id": "SEM_OBTAIN",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "sem_slot"
+        },
+        {
+          "name": "timeout",
+          "type": "timeout"
+        }
+      ],
+      "effect": "Calls KSemaphoreObtain(id, timeout)."
+    },
+    {
+      "name": "SEM_ABANDON",
+      "api_id": "SEM_ABANDON",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "sem_slot"
+        }
+      ],
+      "effect": "Calls KSemaphoreAbandon(id).",
+      "wakes_pend_list": "sem"
+    },
+    {
+      "name": "SEM_SET_VALUE",
+      "api_id": "SEM_SET_VALUE",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "sem_slot"
+        },
+        {
+          "name": "value",
+          "type": "small_value"
+        }
+      ],
+      "effect": "Calls KSemaphoreSetValue(id, value).",
+      "wakes_pend_list": "sem"
+    },
+    {
+      "name": "MUTEX_CREATE",
+      "api_id": "MUTEX_CREATE",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "mutex_slot"
+        }
+      ],
+      "effect": "Stores KMutexCreate() result in mutex slot."
+    },
+    {
+      "name": "MUTEX_DELETE",
+      "api_id": "MUTEX_DELETE",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "mutex_slot"
+        }
+      ],
+      "effect": "Deletes mutex id stored in mutex slot.",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "MUTEX_OBTAIN",
+      "api_id": "MUTEX_OBTAIN",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "mutex_slot"
+        },
+        {
+          "name": "timeout",
+          "type": "timeout"
+        }
+      ],
+      "effect": "Calls KMutexObtain(id, timeout)."
+    },
+    {
+      "name": "MUTEX_ABANDON",
+      "api_id": "MUTEX_ABANDON",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "mutex_slot"
+        }
+      ],
+      "effect": "Calls KMutexAbandon(id)."
+    },
+    {
+      "name": "MSGQ_CREATE",
+      "api_id": "MSGQ_CREATE",
+      "argc": 3,
+      "args": [
+        {
+          "name": "slot",
+          "type": "msgq_slot"
+        },
+        {
+          "name": "msg_size_idx",
+          "type": "msg_size_idx"
+        },
+        {
+          "name": "max_msgs_idx",
+          "type": "max_msgs_idx"
+        }
+      ],
+      "effect": "Stores KCreateMsgQueue(msg_size_table[idx], max_msgs_table[idx]) result in msgq slot."
+    },
+    {
+      "name": "MSGQ_DELETE",
+      "api_id": "MSGQ_DELETE",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "msgq_slot"
+        }
+      ],
+      "effect": "Deletes message queue id stored in msgq slot.",
+      "wakes_pend_list": "msgq",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "MSGQ_SEND",
+      "api_id": "MSGQ_SEND",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "msgq_slot"
+        },
+        {
+          "name": "byte_pattern_idx",
+          "type": "byte_pattern_idx"
+        }
+      ],
+      "effect": "Non-blocking send (KMsgQueueSendwait timeout=0) with fixed-pattern buffer.",
+      "wakes_pend_list": "msgq"
+    },
+    {
+      "name": "MSGQ_RECV",
+      "api_id": "MSGQ_RECV",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "msgq_slot"
+        },
+        {
+          "name": "timeout",
+          "type": "timeout"
+        }
+      ],
+      "effect": "Calls KMsgQueueRecv(id, scratch, msg_size, normalized_timeout)."
+    },
+    {
+      "name": "MSGQ_URGENT_SEND",
+      "api_id": "MSGQ_URGENT_SEND",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "msgq_slot"
+        },
+        {
+          "name": "byte_pattern_idx",
+          "type": "byte_pattern_idx"
+        }
+      ],
+      "effect": "Calls KMsgQueueUrgentSend with fixed-pattern buffer.",
+      "wakes_pend_list": "msgq"
+    },
+    {
+      "name": "MSGQ_REINIT",
+      "api_id": "MSGQ_REINIT",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "msgq_slot"
+        }
+      ],
+      "effect": "Calls KMsgQueueReinit(id) (clears any queued messages).",
+      "wakes_pend_list": "msgq"
+    },
+    {
+      "name": "EVENT_CREATE",
+      "api_id": "EVENT_CREATE",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "event_slot"
+        },
+        {
+          "name": "options_idx",
+          "type": "event_options_idx"
+        }
+      ],
+      "effect": "Stores KEventCreate(options_table[idx]) result in event slot."
+    },
+    {
+      "name": "EVENT_DELETE",
+      "api_id": "EVENT_DELETE",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "event_slot"
+        }
+      ],
+      "effect": "Deletes event id stored in event slot.",
+      "wakes_pend_list": "event",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "EVENT_TRIGGER",
+      "api_id": "EVENT_TRIGGER",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "event_slot"
+        },
+        {
+          "name": "events_pattern_idx",
+          "type": "events_pattern_idx"
+        }
+      ],
+      "effect": "Calls KEventTrigger(id, events_pattern_table[idx]).",
+      "wakes_pend_list": "event"
+    },
+    {
+      "name": "EVENT_PROCESS",
+      "api_id": "EVENT_PROCESS",
+      "argc": 4,
+      "args": [
+        {
+          "name": "slot",
+          "type": "event_slot"
+        },
+        {
+          "name": "events_pattern_idx",
+          "type": "events_pattern_idx"
+        },
+        {
+          "name": "timeout",
+          "type": "timeout"
+        },
+        {
+          "name": "process_options_idx",
+          "type": "event_process_options_idx"
+        }
+      ],
+      "effect": "Calls KEventProcess(id, events_pattern, options, timeout, &scratch). options from process_options_idx: idx0=OR|AUTOCLEAN (default), AND, OR, idx3=0 (neither -> CHECK(0) spin).",
+      "oracle_contract": {
+        "on_empty_events_timeout0_aux": [
+          -2,
+          -10
+        ],
+        "on_empty_slot_aux": [
+          -1
+        ]
+      }
+    },
+    {
+      "name": "TIMER_CREATE",
+      "api_id": "TIMER_CREATE",
+      "argc": 3,
+      "args": [
+        {
+          "name": "slot",
+          "type": "timer_slot"
+        },
+        {
+          "name": "ticks_idx",
+          "type": "timer_ticks_idx"
+        },
+        {
+          "name": "mode_idx",
+          "type": "timer_mode_idx"
+        }
+      ],
+      "effect": "Stores KCreateTimer(noop_cb, ticks_table[idx], mode_table[idx]) result in timer slot."
+    },
+    {
+      "name": "TIMER_DELETE",
+      "api_id": "TIMER_DELETE",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "timer_slot"
+        }
+      ],
+      "effect": "Deletes timer id stored in timer slot (stops running timer first)."
+    },
+    {
+      "name": "TIMER_START_RUN",
+      "api_id": "TIMER_START_RUN",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "timer_slot"
+        }
+      ],
+      "effect": "Calls KTimerStartRun(id) \u2014 moves CREATED \u2192 RUNNING."
+    },
+    {
+      "name": "TIMER_QUIT_RUN",
+      "api_id": "TIMER_QUIT_RUN",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "timer_slot"
+        }
+      ],
+      "effect": "Calls KTimerQuitRun(id) \u2014 moves RUNNING \u2192 CREATED."
+    },
+    {
+      "name": "TIMER_MODIFY",
+      "api_id": "TIMER_MODIFY",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "timer_slot"
+        },
+        {
+          "name": "ticks_idx",
+          "type": "timer_ticks_idx"
+        }
+      ],
+      "effect": "Calls KTimerModify(id, ticks_table[idx]) \u2014 preserves CREATED/RUNNING state."
+    },
+    {
+      "name": "TASK_SPAWN_BLOCK_SEM",
+      "api_id": "TASK_SPAWN_BLOCK_SEM",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "task_slot"
+        },
+        {
+          "name": "sem_slot",
+          "type": "sem_slot"
+        }
+      ],
+      "effect": "KTaskCreate + StartupKTask of a victim that blocks on KSemaphoreObtain(sem_slot, WAITING_FOREVER)."
+    },
+    {
+      "name": "TASK_SPAWN_BLOCK_EVENT",
+      "api_id": "TASK_SPAWN_BLOCK_EVENT",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "task_slot"
+        },
+        {
+          "name": "event_slot",
+          "type": "event_slot"
+        }
+      ],
+      "effect": "KTaskCreate + StartupKTask of a victim that blocks on KEventProcess(event_slot, ANY, EVENT_OR|EVENT_AUTOCLEAN, WAITING_FOREVER)."
+    },
+    {
+      "name": "TASK_SPAWN_BLOCK_MSGQ_RECV",
+      "api_id": "TASK_SPAWN_BLOCK_MSGQ_RECV",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "task_slot"
+        },
+        {
+          "name": "msgq_slot",
+          "type": "msgq_slot"
+        }
+      ],
+      "effect": "KTaskCreate + StartupKTask of a victim that blocks on KMsgQueueRecv(msgq_slot, ..., WAITING_FOREVER)."
+    },
+    {
+      "name": "TASK_SPAWN_BLOCK_MUTEX_HIGH",
+      "api_id": "TASK_SPAWN_BLOCK_MUTEX_HIGH",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "task_slot"
+        },
+        {
+          "name": "mutex_slot",
+          "type": "mutex_slot"
+        }
+      ],
+      "effect": "KTaskCreate + StartupKTask of a victim at priority ABOVE the worker that blocks WAITING_FOREVER on KMutexObtain(mutex_slot). When the worker (lower priority) holds that mutex, a non-priority-inheriting mutex leaves the high-priority victim blocked behind the low-priority holder = priority inversion. Requires the mutex created + held by the worker first (MUTEX_CREATE + MUTEX_OBTAIN)."
+    },
+    {
+      "name": "TASK_TERMINATE",
+      "api_id": "TASK_TERMINATE",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "task_slot"
+        }
+      ],
+      "effect": "KTaskDelete(victim_id) \u2014 kernel removes from pend_list + frees TaskDescriptor."
+    },
+    {
+      "name": "TASK_PRIO_SET",
+      "api_id": "TASK_PRIO_SET",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "task_slot"
+        },
+        {
+          "name": "prio_idx",
+          "type": "small_value"
+        }
+      ],
+      "effect": "KTaskPrioSet(victim_id, prio_table[idx]) \u2014 XiUOS known-bugged API per mutex.c:116 comment.",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "TASK_SPAWN_SELF_SUSPEND",
+      "api_id": "TASK_SPAWN_SELF_SUSPEND",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "task_slot"
+        }
+      ],
+      "effect": "Spawns a victim that calls SuspendKTask(self); on wakeup falls through to RefuzzVictimSleepForever. Victim ends in kernel SUSPEND state."
+    },
+    {
+      "name": "TASK_WAKEUP",
+      "api_id": "TASK_WAKEUP",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "task_slot"
+        }
+      ],
+      "effect": "Main calls KTaskWakeup(g_task_slots[slot]); kernel _KTaskWakeup requires SUSPEND state (returns -ERROR from BLOCKED/DELAYED). Empty slot filtered at worker.",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "TASK_SPAWN_SELF_DELAY",
+      "api_id": "TASK_SPAWN_SELF_DELAY",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "task_slot"
+        },
+        {
+          "name": "ms_idx",
+          "type": "delay_ms_idx"
+        }
+      ],
+      "effect": "Spawns a victim that calls MdelayKTask(ms_table[ms_idx]); on delay expiry falls through to RefuzzVictimSleepForever. Victim is in kernel DELAYED state for the delay window."
+    },
+    {
+      "name": "WQ_CREATE",
+      "api_id": "WQ_CREATE",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "wq_slot"
+        },
+        {
+          "name": "prio_idx",
+          "type": "small_value"
+        }
+      ],
+      "effect": "CreateWorkQueue(name, 1024, prio_table[idx]) \u2014 spawns WQ kernel task + allocates queue."
+    },
+    {
+      "name": "WQ_DEINIT",
+      "api_id": "WQ_DEINIT",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "wq_slot"
+        }
+      ],
+      "effect": "DeInitWorkQueue(p) \u2014 KTaskDelete(WQ task) + frees queue + base."
+    },
+    {
+      "name": "WQ_SUBMIT",
+      "api_id": "WQ_SUBMIT",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "wq_slot"
+        }
+      ],
+      "effect": "WorkSubmit_immediate(p, noop_work) \u2014 enqueues + KTaskWakeup(WQ task).",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "WQ_SUBMIT_DELAYED",
+      "api_id": "WQ_SUBMIT_DELAYED",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "wq_slot"
+        },
+        {
+          "name": "ticks_idx",
+          "type": "timer_ticks_idx"
+        }
+      ],
+      "effect": "WorkSubmit(p, noop_work, ticks_table[idx]) \u2014 internally KCreateTimer + KTimerStartRun.",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "DQ_INIT",
+      "api_id": "DQ_INIT",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "dq_slot"
+        },
+        {
+          "name": "node_count_idx",
+          "type": "dq_node_count_idx"
+        }
+      ],
+      "effect": "InitDataqueue: allocates DataElemType[NodeNumber] via x_malloc + creates 2 internal semaphores. NodeNumber=0 is included in the canonical domain to probe div-by-zero / sem_blank uint8 underflow.",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "DQ_DEINIT",
+      "api_id": "DQ_DEINIT",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "dq_slot"
+        }
+      ],
+      "effect": "DeInitDataqueue: free base array + delete sems.",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "DQ_PUSH",
+      "api_id": "DQ_PUSH",
+      "argc": 3,
+      "args": [
+        {
+          "name": "slot",
+          "type": "dq_slot"
+        },
+        {
+          "name": "size_idx",
+          "type": "dq_size_idx"
+        },
+        {
+          "name": "timeout_idx",
+          "type": "dq_timeout_idx"
+        }
+      ],
+      "effect": "PushDataqueue with worker-owned buffer pointer. timeout_idx 2/3 (50/200ms) exercise the finite-timeout branch that bypasses sem_blank wait.",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "DQ_POP",
+      "api_id": "DQ_POP",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "dq_slot"
+        },
+        {
+          "name": "timeout_idx",
+          "type": "dq_timeout_idx"
+        }
+      ],
+      "effect": "PopDataqueue with discarded out_ptr / out_size. Worker uses local sinks; pointer never read.",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "DQ_PEEK",
+      "api_id": "DQ_PEEK",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "dq_slot"
+        }
+      ],
+      "effect": "DataqueuePeak \u2014 no timeout. Returns head without removing.",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "WAITQ_INIT",
+      "api_id": "WAITQ_INIT",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "waitq_slot"
+        }
+      ],
+      "effect": "InitWqueue: zeroes the WaitQueueType list head. Idempotent.",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "WAITQ_SPAWN_WAIT",
+      "api_id": "WAITQ_SPAWN_WAIT",
+      "argc": 3,
+      "args": [
+        {
+          "name": "slot",
+          "type": "task_slot"
+        },
+        {
+          "name": "queue_slot",
+          "type": "waitq_slot"
+        },
+        {
+          "name": "timeout_idx",
+          "type": "waitq_ticks_idx"
+        }
+      ],
+      "effect": "Spawns victim task that calls WqueueWait on g_waitq_slots[queue_slot] with kRefuzzWaitqTicks[timeout_idx] ticks. Victim falls through to sleep_forever on wakeup/timeout."
+    },
+    {
+      "name": "WAITQ_WAKE",
+      "api_id": "WAITQ_WAKE",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "waitq_slot"
+        }
+      ],
+      "effect": "WakeupWqueue: traverses block_threads_list and wakes all waiters. If a prior victim was KTaskDelete'd while in this list, traversal hits a dangling node (Class F mirror hypothesis).",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "RESOURCE_SNAPSHOT",
+      "api_id": "RESOURCE_SNAPSHOT",
+      "argc": 0,
+      "args": [],
+      "effect": "Oracle-only readback. Returns a packed resource watermark in RESULT.aux; v1 low byte is pending waitqueue-node count, next byte is live victim task slots. Clean baseline is 0.",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "MALLOC",
+      "api_id": "MALLOC",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "malloc_slot"
+        },
+        {
+          "name": "size_idx",
+          "type": "malloc_size_idx"
+        }
+      ],
+      "effect": "x_malloc(size_table[idx]); frees prior block on the slot first. size_idx 0 = zero-size."
+    },
+    {
+      "name": "FREE",
+      "api_id": "FREE",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "malloc_slot"
+        }
+      ],
+      "effect": "x_free(slot pointer)."
+    },
+    {
+      "name": "REALLOC",
+      "api_id": "REALLOC",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "malloc_slot"
+        },
+        {
+          "name": "size_idx",
+          "type": "malloc_size_idx"
+        }
+      ],
+      "effect": "x_realloc(slot, size_table[idx]); NULL slot acts as malloc, size 0 frees."
+    },
+    {
+      "name": "CALLOC",
+      "api_id": "CALLOC",
+      "argc": 3,
+      "args": [
+        {
+          "name": "slot",
+          "type": "malloc_slot"
+        },
+        {
+          "name": "count_idx",
+          "type": "calloc_count_idx"
+        },
+        {
+          "name": "size_idx",
+          "type": "malloc_size_idx"
+        }
+      ],
+      "effect": "x_calloc(count_table[cidx], size_table[sidx]); frees prior block first."
+    },
+    {
+      "name": "GB_CREATE",
+      "api_id": "GB_CREATE",
+      "argc": 3,
+      "args": [
+        {
+          "name": "slot",
+          "type": "gb_slot"
+        },
+        {
+          "name": "block_size_idx",
+          "type": "gb_block_size_idx"
+        },
+        {
+          "name": "block_count_idx",
+          "type": "gb_block_count_idx"
+        }
+      ],
+      "effect": "CreateMemGather(name, block_count, block_size). size_idx 0 probes pool-too-small.",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "GB_DELETE",
+      "api_id": "GB_DELETE",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "gb_slot"
+        }
+      ],
+      "effect": "DeleteMemGather. Rejects (ERROR) if blocks still allocated (upstream fix). Worker does NOT pre-free blocks, so this exercises delete-with-live-block.",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "GB_ALLOC",
+      "api_id": "GB_ALLOC",
+      "argc": 3,
+      "args": [
+        {
+          "name": "slot",
+          "type": "gb_slot"
+        },
+        {
+          "name": "block_slot",
+          "type": "gb_block_slot"
+        },
+        {
+          "name": "timeout_idx",
+          "type": "gb_timeout_idx"
+        }
+      ],
+      "effect": "AllocBlockMemGather into g_gb_blocks[slot][block_slot]. Finite timeout exercises the alloc-waiter path."
+    },
+    {
+      "name": "GB_FREE",
+      "api_id": "GB_FREE",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "gb_slot"
+        },
+        {
+          "name": "block_slot",
+          "type": "gb_block_slot"
+        }
+      ],
+      "effect": "FreeBlockMemGather(g_gb_blocks[slot][block_slot]). Free same block_slot twice \u2192 double-free probe."
+    },
+    {
+      "name": "CA_INIT",
+      "api_id": "CA_INIT",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "ca_slot"
+        },
+        {
+          "name": "length_idx",
+          "type": "ca_length_idx"
+        }
+      ],
+      "effect": "CircularAreaInit(len) into g_ca_slots[slot]; len from {0,64,256,512}. length>256 enters uint8 index truncation territory."
+    },
+    {
+      "name": "CA_RELEASE",
+      "api_id": "CA_RELEASE",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "ca_slot"
+        }
+      ],
+      "effect": "CircularAreaRelease(g_ca_slots[slot]); frees descriptor + data_buffer. Empty slot \u2192 -ERROR (double-release guard)."
+    },
+    {
+      "name": "CA_RESET",
+      "api_id": "CA_RESET",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "ca_slot"
+        }
+      ],
+      "effect": "CircularAreaReset(g_ca_slots[slot]); zeroes read/write indices + status."
+    },
+    {
+      "name": "CA_WRITE",
+      "api_id": "CA_WRITE",
+      "argc": 3,
+      "args": [
+        {
+          "name": "slot",
+          "type": "ca_slot"
+        },
+        {
+          "name": "xfer_idx",
+          "type": "ca_xfer_idx"
+        },
+        {
+          "name": "force",
+          "type": "ca_force"
+        }
+      ],
+      "effect": "CircularAreaWrite(slot, scratch, xfer, force); xfer from {1,64,300,500}. force overwrites when full."
+    },
+    {
+      "name": "CA_READ",
+      "api_id": "CA_READ",
+      "argc": 2,
+      "args": [
+        {
+          "name": "slot",
+          "type": "ca_slot"
+        },
+        {
+          "name": "xfer_idx",
+          "type": "ca_xfer_idx"
+        }
+      ],
+      "effect": "CircularAreaRead(slot, scratch, xfer); xfer from {1,64,300,500}."
+    },
+    {
+      "name": "CA_GET_DATA_LENGTH",
+      "api_id": "CA_GET_DATA_LENGTH",
+      "argc": 1,
+      "args": [
+        {
+          "name": "slot",
+          "type": "ca_slot"
+        }
+      ],
+      "effect": "Returns CircularAreaGetDataLength(slot) in aux. For ring length>256 this diverges from bytes written (uint8 readidx/writeidx truncation).",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    },
+    {
+      "name": "AVL_INSERT",
+      "api_id": "AVL_INSERT",
+      "argc": 2,
+      "args": [
+        { "name": "slot", "type": "avl_slot" },
+        { "name": "data_idx", "type": "avl_data_idx" }
+      ],
+      "effect": "root = AvlTreeInsertNode(root, kRefuzzAvlData[data_idx])."
+    },
+    {
+      "name": "AVL_DELETE",
+      "api_id": "AVL_DELETE",
+      "argc": 2,
+      "args": [
+        { "name": "slot", "type": "avl_slot" },
+        { "name": "data_idx", "type": "avl_data_idx" }
+      ],
+      "effect": "root = AvlTreeDeleteNode(root, data). Delete-rebalance with heavy-child BF==0 drops the subtree (AvlTreeBalance returns NONE)."
+    },
+    {
+      "name": "AVL_MODIFY",
+      "api_id": "AVL_MODIFY",
+      "argc": 3,
+      "args": [
+        { "name": "slot", "type": "avl_slot" },
+        { "name": "src_idx", "type": "avl_data_idx" },
+        { "name": "dst_idx", "type": "avl_data_idx" }
+      ],
+      "effect": "root = AvlNodeModifyNode(root, src, dst). If src absent it still inserts dst (contract gap)."
+    },
+    {
+      "name": "AVL_SEARCH",
+      "api_id": "AVL_SEARCH",
+      "argc": 2,
+      "args": [
+        { "name": "slot", "type": "avl_slot" },
+        { "name": "data_idx", "type": "avl_data_idx" }
+      ],
+      "effect": "aux = 1 if AvlNodeSearchNode finds data else 0."
+    },
+    {
+      "name": "AVL_COUNT",
+      "api_id": "AVL_COUNT",
+      "argc": 1,
+      "args": [
+        { "name": "slot", "type": "avl_slot" }
+      ],
+      "effect": "aux = reachable node count (worker tree-walk). Drops below expected when delete-rebalance orphans a subtree."
+    },
+    {
+      "name": "AVL_CHECK",
+      "api_id": "AVL_CHECK",
+      "argc": 1,
+      "args": [
+        { "name": "slot", "type": "avl_slot" }
+      ],
+      "effect": "aux = invariant-violation bitmask (bit0 BST order, bit1 balance, bit2 height cache); 0 = all hold.",
+      "oracle_contract": {
+        "on_success_aux": 0
+      }
+    }
+  ]
+}

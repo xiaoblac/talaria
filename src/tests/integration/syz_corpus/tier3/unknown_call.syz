@@ -1,0 +1,2 @@
+r0 = ioctl_no_such_variant_xyz(0x0)
+close(r0)

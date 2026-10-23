@@ -1,0 +1,66 @@
+{
+  "profile": "xiuos",
+  "work_dir": "/workspace/talaria/run/xiuos_ch32",
+  "retention": false,
+  "channel": {
+    "backend_id": "ch32_uart_xiuos",
+    "n_workers": 1,
+    "wait_ready_timeout_ms": 60000,
+    "loop_interval_ms": 50,
+    "ch32": {
+      "_comment": "物理 CH32V208RBT6 板,B3 实测通(2026-06-01)。serial_device = 板 USART1 接的 CH340 USB-UART = /dev/ttyUSB0(**不是** WCH-Link 的 ttyACM0!);烧录/复位走 wlink(探针先 wlink mode-switch --rv)。flash 仅 StartVM 跑、reset 每次 reboot 跑(绝不 re-flash);命令留空 = 跳过(板已烧好时设 flash_command='' 只 reset,迭代更快)。烧到 0x08000000。",
+      "serial_device": "/dev/ttyUSB0",
+      "baud": 115200,
+      "image_path": "/workspace/xiuos-work/xiuos/Ubiquitous/XiZi_IIoT_Macro/build/XiZi-ch32v208rbt6.bin",
+      "flash_command": "/workspace/.cargo/bin/wlink flash -e -a 0x08000000 {image}",
+      "reset_command": "/workspace/.cargo/bin/wlink reset",
+      "command_timeout_ms": 60000,
+      "connect_timeout_ms": 10000,
+      "frame_timeout_ms": 10000,
+      "heartbeat_timeout_ms": 500,
+      "poll_slice_ms": 10,
+      "_comment_program_timeout": "wedge 预算。真串口(115200≈11.5KB/s)+ flash/reset 比 QEMU 慢 → 比 QEMU 的 1500ms 大。5000ms 是 Phase B 起点,需按板上实测 RESULT 帧往返 + 执行时间重标(见 docs/plans/xiuos-ch32-bringup.md Phase B / M3)。",
+      "program_timeout_ms": 6000,
+      "shutdown_grace_ms": 2000
+    }
+  },
+  "executor": {
+    "idle_sleep_us": 1000000,
+    "submit_strategy": { "name": "round_robin" },
+    "event_forward_strategy": { "blocking_timeout_ms": 1 },
+    "timeouts_ms": { "poll": 1, "pop": 5 }
+  },
+  "fuzzer": {
+    "high_watermark": 64,
+    "exec_timeout_ms": 15000,
+    "shutdown_grace_ms": 20000,
+    "_comment_capacity": "MUST exceed loaded seed count (persistence.corpus.dir ~38781 wire seeds) + growth headroom，否则 SizeBudgetFilter 拒所有 admit。corpus 与 QEMU 共用(wire 种子板无关)。",
+    "corpus": { "capacity": 200000, "max_drain": 32 }
+  },
+  "target": {
+    "execution_mode": "kernel_syscall",
+    "coverage_mode": "kcov",
+    "sanitizer_mode": "none"
+  },
+  "coverage": {
+    "kcov": { "raw_pc": true }
+  },
+  "persistence": {
+    "corpus": {
+      "enable": true,
+      "load_on_start": true,
+      "_comment_dir": "与 QEMU 路径共用同一 wire 种子集(板无关)。regen: xiuos-corpus-encode --in run/xiuos/corpus/generated --out run/xiuos/corpus/wire",
+      "dir": "/workspace/talaria/run/xiuos/corpus/wire"
+    },
+    "coverage": { "enable": true, "load_on_start": false },
+    "crash_repros_as_seeds": false
+  },
+  "logging": {
+    "enable": true,
+    "stream": true,
+    "console_summary": true
+  },
+  "phase1_run_limit_mode": "runtime",
+  "phase1_runtime_seconds": 180,
+  "phase1_total_tasks": 100000
+}

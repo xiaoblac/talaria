@@ -1,0 +1,155 @@
+{
+  "_purpose_comment": "V2 production-exec paired oracle COV-A: derived from exec_oracle_replayer_sample_config.json. Diffs vs baseline: (1) target.thread_count=32 logical executor slots + kcov_collector_count=8 opened KCOV slots for syzkaller delayed-KCOV parity without silent uncovered worker threads. (2) all syscalls incl. syz_* pseudo are enabled (production parity — captured programs use syz_* helpers; the default empty enable_syscalls whitelist enables every call). (3) channel.vm.qemu.mem=4096 (match syz-manager capture VM shape; prior 2048 has triggered OOM/resource-leak symptoms during long runs). (4) distinct ivshmem path/socket to avoid colliding with the baseline config when both VMs run concurrently. (5) work_dir under run/cova so the qemu serial.sock path stays under the 108-byte UNIX socket limit. intra_task_mode is explicitly threaded to match captured syz-manager threaded requests.",
+  "work_dir": "/workspace/talaria/run/cova",
+  "retention": false,
+  "retention_max": 3,
+  "channel": {
+    "wait_ready_timeout_ms": 180000,
+    "loop_interval_ms": 100,
+    "health_check_interval_ms": 500,
+    "pre_reboot_drain_ms": 5500,
+    "input_queue_capacity": 64,
+    "abnormal_console_snapshot_lines": 80,
+    "vm": {
+      "arch": "amd64",
+      "image": "/workspace/images-test-linux5.14/bookworm.img",
+      "kernel": "/workspace/syzkaller/kernel/build-kasan/arch/x86/boot/bzImage",
+      "ssh_key": "/workspace/images-test-linux5.14/bookworm.id_rsa",
+      "ssh_user": "root",
+      "qemu": {
+        "cpu": 2,
+        "mem": 2048,
+        "cmdline": "nokaslr panic=1 oops=panic",
+        "snapshot": true
+      }
+    },
+    "transport": {
+      "n_workers": 1,
+      "ivshmem_path": "/tmp/refuzz_ivshmem_exec_oracle_replayer_threaded",
+      "ivshmem_mode": "doorbell",
+      "doorbell_socket_path": "/tmp/refuzz_ivshmem_exec_oracle_replayer_threaded.sock",
+      "ivshmem_vectors": 1,
+      "wait_ready_poll_us": 1000,
+      "poll_sleep_us": 100
+    },
+    "health": {
+      "enable": true,
+      "sample_interval_ms": 200,
+      "heartbeat_timeout_ms": 1500,
+      "workers_per_round": 0
+    }
+  },
+  "executor": {
+    "idle_sleep_us": 1000000,
+    "submit_wait_for_slot_ms": 0,
+    "submit_strategy": {
+      "name": "round_robin"
+    },
+    "event_forward_strategy": {
+      "blocking_timeout_ms": 1
+    },
+    "timeouts_ms": {
+      "poll": 1,
+      "pop": 5
+    }
+  },
+  "fuzzer": {
+    "high_watermark": 64,
+    "_exec_timeout_comment": "[2026-05-24] 5000ms = syzkaller Program timeout (sys/targets/targets.go:860 base 5s \u00d7 Scale=min(slowdown,3)) at slowdown=1. reFuzz \u8dd1 QEMU -enable-kvm + x86_64/x86_64,pkg/mgrconfig/load.go:242 \u5224 slowdown=1(\u53ea\u6709 -accel tcg / \u8de8\u67b6\u6784 / gVisor-race \u624d 10;KASAN \u4e0d\u63d0\u5347)\u3002executor.cc:881 \u5f3a\u5236 program_timeout > syscall_timeout,\u4e0e per_call_timeout_ms=50 \u914d\u5957\u3002\u539f 2000 \u65e0 syzkaller \u4f9d\u636e\u4e14 < \u65e7 per_call 5000,\u8fdd\u53cd\u8be5 invariant \u5bfc\u81f4 blocking FUSE program \u88ab watchdog \u622a\u65ad\u3002",
+    "exec_timeout_ms": 5000,
+    "shutdown_grace_ms": 60000,
+    "worker_log": {
+      "enable": true
+    },
+    "worker_perf": {
+      "enable": false,
+      "sample_rate": 1,
+      "report_every": 128
+    },
+    "mutator_policy": "syz_balanced",
+    "corpus": {
+      "capacity": 10000,
+      "max_drain": 32
+    }
+  },
+  "telemetry": {
+    "policy_monitor": {
+      "min_dwell_seconds": 300,
+      "window_size": 10,
+      "stall_threshold": 0.01,
+      "required_windows": 3,
+      "degraded_channel_ratio": 0.5
+    },
+    "observability": {
+      "pull_interval_ms": 500
+    },
+    "dashboard": {
+      "enable": true,
+      "refresh_interval_ms": 500,
+      "max_events": 6,
+      "use_alternate_screen": true
+    },
+    "logging": {
+      "enable": true,
+      "stream": false,
+      "flush_interval_ms": 250,
+      "console_summary": true,
+      "hot_path_sample_rate": 0
+    }
+  },
+  "target": {
+    "execution_mode": "kernel_syscall",
+    "coverage_mode": "kcov",
+    "sanitizer_mode": "none",
+    "sandbox_mode": "none",
+    "debug_smaps": true,
+    "debug_empty_fork": false,
+    "_thread_count_comment": "32 is the upper bound enforced by config_parser (matches syzkaller kMaxThreads). Bumped 8 \u2192 32 on 2026-05-19 after observing 38/860 mount-image calls hit reFuzz's KernelThreadPool 'all threads busy' path \u2192 flag bit kCallFlagBlocked + skip (kernel_wire_driver.cpp:1257), surfacing as 100% mount_image wire-flag mismatch on the smoke. With 32 threads the pool fans out to syzkaller's own upper bound, eliminating the artificial Blocked-flag emission while keeping memory bounded (N \u00d7 per_thread_kcov mmap = ~128 MiB max).",
+    "thread_count": 32,
+    "_aligned_with_phase5_comment": "[2026-05-20] \u628a phase5_threaded_sample_config.json \u91cc 4 \u4e2a\u8ddf worker \u8c03\u5ea6 + KCOV \u6c60 + per-syscall timeout \u76f8\u5173\u7684\u5b57\u6bb5\u8865\u9f50,\u907f\u514d oracle smoke \u8dd1\u51fa\u6765\u7684\u6570\u636e\u88ab phase5 \u6027\u80fd\u6d4b\u8bd5\u4fa7\u7684 C++ default \u6f02\u79fb\u6c61\u67d3\u3002phase5 \u662f perf \u6d4b\u8bd5\u4e3b\u6218\u573a,oracle config \u9700\u72ec\u7acb\u663e\u5f0f\u58f0\u660e\u540c\u6837\u7684\u503c\u3002",
+    "_intra_task_mode_comment": "[Epic 7 PR-4.6] 'threaded' = channel dispatcher \u7ed9\u6bcf\u4e2a outgoing task OR \u4e0a TASK_FLAG_INTRA_THREADED,worker driver \u8d70 ExecuteThreaded \u2192 KernelThreadPool \u8c03\u5ea6\u3002\u8981\u6c42 thread_count > 1\u3002oracle \u6536\u7684 trace \u91cc\u6355\u83b7\u4e86\u539f\u59cb syz-manager \u4e0b\u53d1\u7684 INTRA_THREADED \u6807\u8bb0,\u8fd9\u91cc\u663e\u5f0f threaded \u8ddf production parity \u5bf9\u9f50\u3002",
+    "intra_task_mode": "threaded",
+    "_kcov_pool_comment": "[\u5f53\u524d\u7248\u672c threaded-kcov-parity] cova \u771f\u5b9e threaded workload \u7528 thread_count=32 \u4f5c\u4e3a logical executor \u4e0a\u9650;kcov_collector_count=8 \u5bf9\u9f50 syzkaller kCoverOptimizedCount opened KCOV fd \u4e0a\u9650\u3002\u5982\u679c\u9700\u8981 coverage \u7684\u7ebf\u7a0b\u6ca1\u6709 kcov fd,syzkaller \u4f1a fail,reFuzz \u8c03\u5ea6\u5c42\u4e5f\u4e0d\u4f1a\u9759\u9ed8\u65e0\u8986\u76d6\u6267\u884c\u3002kcov_premap_count=3 \u5bf9\u9f50 kCoverOptimizedPreMmap,\u5176\u4f59 collector \u9996\u6b21 Begin \u65f6 lazy mmap\u3002",
+    "kcov_collector_count": 8,
+    "kcov_premap_count": 3,
+    "_per_call_timeout_comment": "[2026-05-24] 50ms = syzkaller Syscall blocked \u9608\u503c (sys/targets/targets.go:857 base 50ms \u00d7 slowdown) at slowdown=1\u3002reFuzz QEMU -enable-kvm x86_64/x86_64 \u2192 slowdown=1 (load.go:242)\u3002executor.cc:1103 per-call wait = syscall_timeout + call.attrs.timeout\u00d7slowdown;\u8d85\u8fc7\u5373\u6807 blocked \u4f46\u4e0d\u6740,threaded \u7ee7\u7eed\u8c03\u5ea6\u4e0b\u4e2a call(\u5bf9 FUSE: openat$dir blocked 50ms \u540e yield,\u8ba9 syz_fuse_handle_req \u670d\u52a1 /dev/fuse \u8bf7\u6c42)\u3002\u914d exec_timeout_ms=5000 \u6ee1\u8db3 executor.cc:881 program>syscall invariant\u3002\u539f 5000 \u662f executor stdio fallback \u503c,\u975e manager fuzz \u8def\u5f84\u3002",
+    "per_call_timeout_ms": 50
+  },
+  "coverage": {
+    "kcov": {
+      "raw_pc": true,
+      "max_pcs_per_exec": 8192,
+      "sample_rate": 1.0,
+      "drain_seconds": 1,
+      "persist_seconds": 60,
+      "max_inbox_batches": 4096
+    },
+    "export": {
+      "enabled": true
+    }
+  },
+  "persistence": {
+    "corpus": {
+      "enable": true,
+      "load_on_start": true
+    },
+    "coverage": {
+      "enable": true,
+      "load_on_start": true
+    },
+    "crash_repros_as_seeds": false
+  },
+  "repro": {
+    "enable": true,
+    "dedicated_vm_count": 1,
+    "vmlinux_path": "/workspace/syzkaller/kernel/build-kasan/vmlinux",
+    "addr2line_binary": "addr2line",
+    "queue_capacity": 64,
+    "execute_timeout_ms": 30000
+  },
+  "phase0_worker_bin": "/workspace/talaria/build-llvm20/executor/channel/worker/ivshmem_worker",
+  "phase0_vm_id": 0,
+  "phase1_run_limit_mode": "task_count",
+  "phase1_runtime_seconds": 30000000,
+  "phase1_total_tasks": 100000000
+}

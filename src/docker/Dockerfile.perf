@@ -1,0 +1,47 @@
+# Dedicated reFuzz performance-sampling image (replay mode, wall+CPU+kernel profile).
+#
+# Everything is prebuilt on the build machine; the container only runs
+# perf_sampling.sh replay. No compilers, no Go, no kernel source.
+FROM debian:bookworm-slim
+
+ARG APT_MIRROR="mirrors.aliyun.com"
+
+RUN sed -i "s#deb.debian.org#${APT_MIRROR}#g" /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        qemu-system-x86 \
+        qemu-utils \
+        libjemalloc2 \
+        openssh-client \
+        binutils \
+        python3 \
+        python3-matplotlib \
+        python3-numpy \
+        ca-certificates \
+        procps \
+        psmisc \
+        less \
+    && rm -rf /var/lib/apt/lists/* \
+    && qemu-system-x86_64 --version | head -1 > /opt/QEMU_VERSION.txt
+
+COPY opt/perf /opt/perf
+
+COPY libcxx/ /usr/lib/x86_64-linux-gnu/
+RUN ln -sf libc++.so.1.0    /usr/lib/x86_64-linux-gnu/libc++.so.1 \
+ && ln -sf libc++abi.so.1.0 /usr/lib/x86_64-linux-gnu/libc++abi.so.1 \
+ && ln -sf libunwind.so.1.0 /usr/lib/x86_64-linux-gnu/libunwind.so.1 \
+ && ldconfig
+
+RUN chmod 600 /opt/perf/id_rsa \
+ && chmod +x /opt/perf/run_replay.sh \
+    /opt/perf/scripts/perf_compare/*.sh \
+    /opt/perf/scripts/perf_compare/perf \
+    /opt/perf/build/control/orchestrator/refuzz \
+    /opt/perf/build/executor/channel/worker/ivshmem_worker \
+    /opt/perf/build/executor/channel/worker/refuzz_executor \
+ && ls -l /dev/kvm >/dev/null 2>&1 || true
+
+LABEL refuzz.experiment="perf-replay"
+LABEL refuzz.streams="W1=syz-a,W2=rfz-a"
+
+WORKDIR /opt/perf
+ENTRYPOINT ["/opt/perf/run_replay.sh"]

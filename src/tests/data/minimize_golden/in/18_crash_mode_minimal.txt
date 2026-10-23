@@ -1,0 +1,6 @@
+# refuzz minimize_golden v1
+# os=linux arch=amd64 mode=crash call_index=2
+getpid()
+getuid()
+sched_yield()
+getpid()

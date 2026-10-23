@@ -1,0 +1,1 @@
+cmd_/workspace/talaria/vm/kernel_driver/Module.symvers := sed 's/\.ko$$/\.o/' /workspace/talaria/vm/kernel_driver/modules.order | scripts/mod/modpost    -o /workspace/talaria/vm/kernel_driver/Module.symvers -e -i Module.symvers   -T -

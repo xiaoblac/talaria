@@ -1,0 +1,9 @@
+{
+  "name": "sem_invalid_slot",
+  "suite": "COMMON_KERNEL",
+  "calls": [
+    {"api": "SEM_OBTAIN", "args": [3, 0]},
+    {"api": "SEM_ABANDON", "args": [3]},
+    {"api": "SEM_DELETE", "args": [3]}
+  ]
+}

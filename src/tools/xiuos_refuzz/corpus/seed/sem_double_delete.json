@@ -1,0 +1,9 @@
+{
+  "name": "sem_double_delete",
+  "suite": "COMMON_KERNEL",
+  "calls": [
+    {"api": "SEM_CREATE", "args": [0, 1]},
+    {"api": "SEM_DELETE", "args": [0]},
+    {"api": "SEM_DELETE", "args": [0]}
+  ]
+}

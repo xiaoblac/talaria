@@ -1,0 +1,10 @@
+{
+  "name": "mutex_obtain_abandon_delete",
+  "suite": "COMMON_KERNEL",
+  "calls": [
+    {"api": "MUTEX_CREATE", "args": [0]},
+    {"api": "MUTEX_OBTAIN", "args": [0, 0]},
+    {"api": "MUTEX_ABANDON", "args": [0]},
+    {"api": "MUTEX_DELETE", "args": [0]}
+  ]
+}

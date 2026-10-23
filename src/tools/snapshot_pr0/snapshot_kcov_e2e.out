@@ -1,0 +1,32 @@
+[23:39:27] launching QEMU (vvfat agent disk) ...
+[23:39:28] waiting for /bin/sh ...
+[23:40:01] diag:
+/dev/sda
+/dev/sr0
+/dev/sr1
+ISO_SUPPORT
+	iso9660
+ENDDIAG=e853d3d4
+#
+[23:40:06] transfer: mount_rc=0 cp_rc=0 sz=904984  err=''
+[23:40:06] agent staged OK
+[23:40:07] agent ready: AGENT_READY cover_entries=65536
+[23:40:10] savevm S0 (2122 ms) out=''; --        S0                702 MiB 2026-05-25 23:40:07 00:00:39.873
+[23:40:10] iter 1: KCOV n=19726 hash=4bc9d66b351d35d1 (loadvm 0 ms)
+[23:40:12] iter 2: KCOV n=19624 hash=2b56276a3c129d12 (loadvm 1347 ms)
+[23:40:14] iter 3: KCOV n=19636 hash=5584425e07205754 (loadvm 1310 ms)
+[23:40:17] iter 4: KCOV n=19715 hash=f48aacf8acb7e5c7 (loadvm 1560 ms)
+[23:40:19] iter 5: KCOV n=19624 hash=c1cd8570c2faba6e (loadvm 1500 ms)
+
+============ snapshot KCOV end-to-end ============
+iter  KCOV PCs               hash  loadvm ms
+   1     19726   4bc9d66b351d35d1          0
+   2     19624   2b56276a3c129d12       1347
+   3     19636   5584425e07205754       1310
+   4     19715   f48aacf8acb7e5c7       1560
+   5     19624   c1cd8570c2faba6e       1500
+
+real coverage collected (all n>0): True
+coverage STABLE across restores  : False
+=> snapshot mode executed a REAL program and produced KCOV (see above).
+==================================================

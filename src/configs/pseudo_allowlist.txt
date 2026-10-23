@@ -1,0 +1,5 @@
+# Reviewed reFuzz/syzkaller pseudo syscall allowlist.
+# Only entries with review_verdict=allow are enabled for fair benchmark runs.
+# One exact upstream syz_* name per line; comments are allowed.
+# Regenerate manifest with scripts/generate_pseudo_manifest.py.
+# allowed_count=0

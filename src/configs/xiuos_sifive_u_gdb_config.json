@@ -1,0 +1,84 @@
+{
+  "_comment": "gdb triage: 单 QEMU(repro 关)+ XIUOS_QEMU_GDBSTUB,gdb break HandleTrap 抓首个内存 fault → bt 定位根因。产物在 run/xiuos。",
+  "profile": "xiuos",
+  "work_dir": "/workspace/talaria/run/xiuos/gdb_run",
+  "retention": false,
+  "channel": {
+    "backend_id": "qemu_uart_sifive_u",
+    "n_workers": 1,
+    "wait_ready_timeout_ms": 60000,
+    "loop_interval_ms": 50,
+    "xiuos": {
+      "qemu_bin": "qemu-system-riscv64",
+      "machine": "sifive_u",
+      "mem": "256M",
+      "elf_path": "/workspace/talaria/run/xiuos/artifacts/s2_kernel.elf",
+      "app_bin_path": "/workspace/talaria/run/xiuos/artifacts/s2_app.bin",
+      "app_load_addr": "0x80101000",
+      "console_endpoint": "file:/workspace/talaria/run/xiuos/gdb_run/console.log",
+      "serial_host": "127.0.0.1",
+      "serial_port": 33020,
+      "connect_timeout_ms": 10000,
+      "frame_timeout_ms": 10000,
+      "heartbeat_timeout_ms": 500,
+      "poll_slice_ms": 10,
+      "program_timeout_ms": 1500,
+      "shutdown_grace_ms": 2000
+    }
+  },
+  "executor": {
+    "idle_sleep_us": 1000000,
+    "submit_strategy": {
+      "name": "round_robin"
+    },
+    "event_forward_strategy": {
+      "blocking_timeout_ms": 1
+    },
+    "timeouts_ms": {
+      "poll": 1,
+      "pop": 5
+    }
+  },
+  "fuzzer": {
+    "high_watermark": 64,
+    "exec_timeout_ms": 15000,
+    "shutdown_grace_ms": 20000,
+    "corpus": {
+      "capacity": 200000,
+      "max_drain": 32
+    }
+  },
+  "target": {
+    "execution_mode": "kernel_syscall",
+    "coverage_mode": "kcov",
+    "sanitizer_mode": "none"
+  },
+  "coverage": {
+    "kcov": {
+      "raw_pc": true
+    }
+  },
+  "persistence": {
+    "corpus": {
+      "enable": true,
+      "load_on_start": true,
+      "dir": "/workspace/talaria/run/xiuos/corpus/app_surface"
+    },
+    "coverage": {
+      "enable": false,
+      "load_on_start": false
+    },
+    "crash_repros_as_seeds": false
+  },
+  "repro": {
+    "enable": false
+  },
+  "logging": {
+    "enable": true,
+    "stream": true,
+    "console_summary": true
+  },
+  "phase1_run_limit_mode": "runtime",
+  "phase1_runtime_seconds": 300,
+  "phase1_total_tasks": 100000
+}

@@ -1,0 +1,4 @@
+getpid()
+gettid()
+getuid()
+getgid()

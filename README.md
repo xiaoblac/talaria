@@ -142,3 +142,24 @@ included.
 `SHA256SUMS.parts` records the upload-part checksums. Paths inside each archive
 are rooted at the archive name without the `.tar.zst` suffix, for example
 `talaria-rq1-execution/` and `talaria-rq4-bug/`.
+
+## Source code
+
+`src/` contains the Talaria source used for the experiments. The tree uses the
+internal project name reFuzz. It corresponds to reFuzz commit `0a39133afb6b`
+together with the local changes present when the experiment images were built;
+the `refuzz` binary in both experiment images was built from this tree.
+
+`patches/syzkaller-08ab31164.patch` contains the local changes applied to
+Syzkaller revision `08ab31164c55` for the baseline.
+
+Build entry points:
+
+- `src/docker/build_kernels.sh`: the three kernels for the coverage and bug
+  campaigns (configurations in `src/docker/kernel_configs/`).
+- `src/docker/build_userspace.sh`: the Talaria and Syzkaller binaries and the
+  root file systems.
+- `src/docker/build_artifacts.sh` with `src/docker/Dockerfile`: the image used
+  for the coverage (RQ3) and bug (RQ4) campaigns.
+- `src/docker/build_perf_artifacts.sh` with `src/docker/Dockerfile.perf`: the
+  image used for the replay measurements (RQ1 and RQ2).

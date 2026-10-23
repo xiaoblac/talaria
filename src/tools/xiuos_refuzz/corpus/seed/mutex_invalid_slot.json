@@ -1,0 +1,9 @@
+{
+  "name": "mutex_invalid_slot",
+  "suite": "COMMON_KERNEL",
+  "calls": [
+    {"api": "MUTEX_OBTAIN", "args": [3, 0]},
+    {"api": "MUTEX_ABANDON", "args": [3]},
+    {"api": "MUTEX_DELETE", "args": [3]}
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "sem_mutex_interleave",
+  "suite": "COMMON_KERNEL",
+  "calls": [
+    {"api": "SEM_CREATE", "args": [0, 1]},
+    {"api": "MUTEX_CREATE", "args": [0]},
+    {"api": "SEM_OBTAIN", "args": [0, 0]},
+    {"api": "MUTEX_OBTAIN", "args": [0, 0]},
+    {"api": "SEM_ABANDON", "args": [0]},
+    {"api": "MUTEX_ABANDON", "args": [0]},
+    {"api": "SEM_DELETE", "args": [0]},
+    {"api": "MUTEX_DELETE", "args": [0]}
+  ]
+}

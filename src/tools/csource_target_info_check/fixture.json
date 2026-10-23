@@ -1,0 +1,77 @@
+{
+  "goos": "linux",
+  "goarch": "amd64",
+  "ptr_size": 8,
+  "page_size": 4096,
+  "num_pages": 4096,
+  "cflags": [
+    "-m64",
+    "-O2",
+    "-pthread",
+    "-Wall",
+    "-Werror",
+    "-Wparentheses",
+    "-Wunused-const-variable",
+    "-Wframe-larger-than=16384",
+    "-Wno-stringop-overflow",
+    "-Wno-array-bounds",
+    "-Wno-format-overflow",
+    "-Wno-unused-but-set-variable",
+    "-Wno-unused-command-line-argument",
+    "-static-pie"
+  ],
+  "cpp": "cpp",
+  "c_compiler": "gcc",
+  "syscall_prefix": "__NR_",
+  "executor_uses_fork_server": true,
+  "need_syscall_define_samples": [
+    false,
+    false,
+    true,
+    true
+  ],
+  "host_goos": "linux",
+  "pseudo_syscall_deps": {
+    "syz_clone": [
+      "clone",
+      "exit"
+    ],
+    "syz_clone3": [
+      "clone3",
+      "exit"
+    ],
+    "syz_io_uring_setup": [
+      "io_uring_setup"
+    ],
+    "syz_mount_image": [
+      "memfd_create"
+    ],
+    "syz_pidfd_open": [
+      "pidfd_open"
+    ],
+    "syz_read_part_table": [
+      "memfd_create"
+    ]
+  },
+  "timeouts": [
+    {
+      "slowdown": 1,
+      "scale": 1,
+      "program_ms": 5000,
+      "syscall_ms": 50
+    },
+    {
+      "slowdown": 3,
+      "scale": 3,
+      "program_ms": 15000,
+      "syscall_ms": 150
+    },
+    {
+      "slowdown": 10,
+      "scale": 3,
+      "program_ms": 15000,
+      "syscall_ms": 500
+    }
+  ],
+  "mmap_prog_serialize_hex": "06ce41010c04ff3f00108040001000001064000801001000ce41010c040000108080801000100e001064000801001000ce41010c04808080100010804000100000106400080100100001"
+}

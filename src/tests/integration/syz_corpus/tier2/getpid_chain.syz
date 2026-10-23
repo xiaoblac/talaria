@@ -1,0 +1,2 @@
+r0 = getpid()
+ptrace(0x10, r0)

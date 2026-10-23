@@ -1,0 +1,19 @@
+[22:38:53] === config c1_fullboot_m2048 (mem=2048) ===
+[22:40:19]   [c1_fullboot_m2048] boot marker ok
+[22:40:33] === config c2_shinit_m2048 (mem=2048) ===
+[22:41:04]   [c2_shinit_m2048] boot marker ok
+[22:41:16] === config c3_shinit_m512 (mem=512) ===
+[22:44:56]   [c3_shinit_m512] boot marker MISS
+[22:44:56] === config c4_shinit_m256_fewdev (mem=256) ===
+[22:48:36]   [c4_shinit_m256_fewdev] boot marker MISS
+
+================ footprint sweep ================
+config                     mem  boot  snapMiB  savevm  restore(med ms)
+c1_fullboot_m2048         2048  True      831    2405 2267 [2682, 2267, 2248]
+c2_shinit_m2048           2048  True      702    2371 1731 [2122, 1731, 1725]
+c3_shinit_m512             512 False        -       -   no boot marker
+c4_shinit_m256_fewdev      256 False        -       -   no boot marker
+
+baseline c1 = 831 MiB / 2267 ms
+target (snapshot.h quiet VM) = 132-260 MiB / 150-275 ms
+================================================

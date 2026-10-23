@@ -1,0 +1,77 @@
+{
+  "work_dir": "/tmp/refuzz_phase0",
+  "retention": false,
+  "retention_max": 3,
+  "channel": {
+    "wait_ready_timeout_ms": 60000,
+    "loop_interval_ms": 100,
+    "health_check_interval_ms": 500,
+    "pre_reboot_drain_ms": 5500,
+    "vm": {
+      "arch": "amd64",
+      "image": "/workspace/images-test-linux5.14/bookworm.img",
+      "kernel": "/workspace/cppro/linux-5.14/arch/x86/boot/bzImage",
+      "ssh_key": "/workspace/images-test-linux5.14/bookworm.id_rsa",
+      "ssh_user": "root",
+      "qemu": {
+        "cpu": 2,
+        "mem": 2048,
+        "cmdline": "root=/dev/sda console=ttyS0 net.ifnames=0 biosdevname=0 nokaslr",
+        "snapshot": true
+      }
+    },
+    "transport": {
+      "n_workers": 1,
+      "ivshmem_path": "/tmp/refuzz_ivshmem_phase0",
+      "ivshmem_mode": "plain"
+    }
+  },
+  "executor": {
+    "_comment_idle_sleep_us": "[Phase H] 不再作为轮询周期;主唤醒路径靠 event 线程 NotifySubmitThread,idle_sleep_us 只是兜底防死锁,用默认 1s 即可。显式覆盖请按这一语义设置(>=100ms)。",
+    "idle_sleep_us": 1000000,
+    "submit_strategy": {
+      "name": "round_robin"
+    },
+    "event_forward_strategy": {
+      "blocking_timeout_ms": 1
+    },
+    "timeouts_ms": {
+      "poll": 1,
+      "pop": 5
+    }
+  },
+  "fuzzer": {
+    "high_watermark": 64,
+    "exec_timeout_ms": 5000,
+    "shutdown_grace_ms": 60000,
+    "corpus": {
+      "capacity": 10000,
+      "max_drain": 32
+    }
+  },
+  "telemetry": {
+    "policy_monitor": {
+      "min_dwell_seconds": 300,
+      "window_size": 10,
+      "stall_threshold": 0.01,
+      "required_windows": 3
+    }
+  },
+  "coverage": {
+    "kcov": {
+      "raw_pc": true,
+      "max_pcs_per_exec": 8192,
+      "sample_rate": 1.0,
+      "drain_seconds": 1,
+      "persist_seconds": 5,
+      "max_inbox_batches": 4096
+    }
+  },
+  "repro": {
+    "enable": false,
+    "dedicated_vm_count": 1,
+    "vmlinux_path": "/workspace/cppro/linux-5.14/vmlinux",
+    "addr2line_binary": "addr2line",
+    "queue_capacity": 64
+  }
+}

@@ -1,0 +1,155 @@
+{
+  "_purpose_comment": "V2 production-exec paired oracle COV-A: derived from exec_oracle_replayer_sample_config.json. Diffs vs baseline: (1) target.thread_count=32 logical executor slots + kcov_collector_count=8 opened KCOV slots for syzkaller delayed-KCOV parity without silent uncovered worker threads. (2) all syscalls incl. syz_* pseudo are enabled (production parity — captured programs use syz_* helpers; the default empty enable_syscalls whitelist enables every call). (3) channel.vm.qemu.mem=4096 (match syz-manager capture VM shape; prior 2048 has triggered OOM/resource-leak symptoms during long runs). (4) distinct ivshmem path/socket to avoid colliding with the baseline config when both VMs run concurrently. (5) work_dir under run/cova so the qemu serial.sock path stays under the 108-byte UNIX socket limit. intra_task_mode is explicitly threaded to match captured syz-manager threaded requests.",
+  "work_dir": "/workspace/talaria/run/cova",
+  "retention": false,
+  "retention_max": 3,
+  "channel": {
+    "wait_ready_timeout_ms": 180000,
+    "loop_interval_ms": 100,
+    "health_check_interval_ms": 500,
+    "pre_reboot_drain_ms": 5500,
+    "input_queue_capacity": 64,
+    "abnormal_console_snapshot_lines": 80,
+    "vm": {
+      "arch": "amd64",
+      "image": "/workspace/images-test-linux5.14/bookworm.img",
+      "kernel": "/workspace/syzkaller/kernel/build-kasan/arch/x86/boot/bzImage",
+      "ssh_key": "/workspace/images-test-linux5.14/bookworm.id_rsa",
+      "ssh_user": "root",
+      "qemu": {
+        "cpu": 2,
+        "mem": 4096,
+        "cmdline": "nokaslr panic=1 oops=panic",
+        "snapshot": true
+      }
+    },
+    "transport": {
+      "n_workers": 1,
+      "ivshmem_path": "/tmp/refuzz_ivshmem_exec_oracle_replayer_threaded",
+      "ivshmem_mode": "doorbell",
+      "doorbell_socket_path": "/tmp/refuzz_ivshmem_exec_oracle_replayer_threaded.sock",
+      "ivshmem_vectors": 1,
+      "wait_ready_poll_us": 1000,
+      "poll_sleep_us": 100
+    },
+    "health": {
+      "enable": true,
+      "sample_interval_ms": 200,
+      "heartbeat_timeout_ms": 1500,
+      "workers_per_round": 0
+    }
+  },
+  "executor": {
+    "idle_sleep_us": 1000000,
+    "submit_wait_for_slot_ms": 0,
+    "submit_strategy": {
+      "name": "round_robin"
+    },
+    "event_forward_strategy": {
+      "blocking_timeout_ms": 1
+    },
+    "timeouts_ms": {
+      "poll": 1,
+      "pop": 5
+    }
+  },
+  "fuzzer": {
+    "high_watermark": 64,
+    "_exec_timeout_comment": "[2026-05-24] 5000ms = syzkaller Program timeout (sys/targets/targets.go:860 base 5s × Scale=min(slowdown,3)) at slowdown=1. reFuzz 跑 QEMU -enable-kvm + x86_64/x86_64,pkg/mgrconfig/load.go:242 判 slowdown=1(只有 -accel tcg / 跨架构 / gVisor-race 才 10;KASAN 不提升)。executor.cc:881 强制 program_timeout > syscall_timeout,与 per_call_timeout_ms=50 配套。原 2000 无 syzkaller 依据且 < 旧 per_call 5000,违反该 invariant 导致 blocking FUSE program 被 watchdog 截断。",
+    "exec_timeout_ms": 5000,
+    "shutdown_grace_ms": 60000,
+    "worker_log": {
+      "enable": true
+    },
+    "worker_perf": {
+      "enable": false,
+      "sample_rate": 1,
+      "report_every": 128
+    },
+    "mutator_policy": "syz_balanced",
+    "corpus": {
+      "capacity": 10000,
+      "max_drain": 32
+    }
+  },
+  "telemetry": {
+    "policy_monitor": {
+      "min_dwell_seconds": 300,
+      "window_size": 10,
+      "stall_threshold": 0.01,
+      "required_windows": 3,
+      "degraded_channel_ratio": 0.5
+    },
+    "observability": {
+      "pull_interval_ms": 500
+    },
+    "dashboard": {
+      "enable": true,
+      "refresh_interval_ms": 500,
+      "max_events": 6,
+      "use_alternate_screen": true
+    },
+    "logging": {
+      "enable": true,
+      "stream": false,
+      "flush_interval_ms": 250,
+      "console_summary": true,
+      "hot_path_sample_rate": 0
+    }
+  },
+  "target": {
+    "execution_mode": "kernel_syscall",
+    "coverage_mode": "kcov",
+    "sanitizer_mode": "none",
+    "sandbox_mode": "none",
+    "debug_smaps": true,
+    "debug_empty_fork": false,
+    "_thread_count_comment": "32 is the upper bound enforced by config_parser (matches syzkaller kMaxThreads). Bumped 8 → 32 on 2026-05-19 after observing 38/860 mount-image calls hit reFuzz's KernelThreadPool 'all threads busy' path → flag bit kCallFlagBlocked + skip (kernel_wire_driver.cpp:1257), surfacing as 100% mount_image wire-flag mismatch on the smoke. With 32 threads the pool fans out to syzkaller's own upper bound, eliminating the artificial Blocked-flag emission while keeping memory bounded (N × per_thread_kcov mmap = ~128 MiB max).",
+    "thread_count": 32,
+    "_aligned_with_phase5_comment": "[2026-05-20] 把 phase5_threaded_sample_config.json 里 4 个跟 worker 调度 + KCOV 池 + per-syscall timeout 相关的字段补齐,避免 oracle smoke 跑出来的数据被 phase5 性能测试侧的 C++ default 漂移污染。phase5 是 perf 测试主战场,oracle config 需独立显式声明同样的值。",
+    "_intra_task_mode_comment": "[Epic 7 PR-4.6] 'threaded' = channel dispatcher 给每个 outgoing task OR 上 TASK_FLAG_INTRA_THREADED,worker driver 走 ExecuteThreaded → KernelThreadPool 调度。要求 thread_count > 1。oracle 收的 trace 里捕获了原始 syz-manager 下发的 INTRA_THREADED 标记,这里显式 threaded 跟 production parity 对齐。",
+    "intra_task_mode": "threaded",
+    "_kcov_pool_comment": "[当前版本 threaded-kcov-parity] cova 真实 threaded workload 用 thread_count=32 作为 logical executor 上限;kcov_collector_count=8 对齐 syzkaller kCoverOptimizedCount opened KCOV fd 上限。如果需要 coverage 的线程没有 kcov fd,syzkaller 会 fail,reFuzz 调度层也不会静默无覆盖执行。kcov_premap_count=3 对齐 kCoverOptimizedPreMmap,其余 collector 首次 Begin 时 lazy mmap。",
+    "kcov_collector_count": 8,
+    "kcov_premap_count": 3,
+    "_per_call_timeout_comment": "[2026-05-24] 50ms = syzkaller Syscall blocked 阈值 (sys/targets/targets.go:857 base 50ms × slowdown) at slowdown=1。reFuzz QEMU -enable-kvm x86_64/x86_64 → slowdown=1 (load.go:242)。executor.cc:1103 per-call wait = syscall_timeout + call.attrs.timeout×slowdown;超过即标 blocked 但不杀,threaded 继续调度下个 call(对 FUSE: openat$dir blocked 50ms 后 yield,让 syz_fuse_handle_req 服务 /dev/fuse 请求)。配 exec_timeout_ms=5000 满足 executor.cc:881 program>syscall invariant。原 5000 是 executor stdio fallback 值,非 manager fuzz 路径。",
+    "per_call_timeout_ms": 50
+  },
+  "coverage": {
+    "kcov": {
+      "raw_pc": true,
+      "max_pcs_per_exec": 8192,
+      "sample_rate": 1.0,
+      "drain_seconds": 1,
+      "persist_seconds": 60,
+      "max_inbox_batches": 4096
+    },
+    "export": {
+      "enabled": true
+    }
+  },
+  "persistence": {
+    "corpus": {
+      "enable": true,
+      "load_on_start": true
+    },
+    "coverage": {
+      "enable": true,
+      "load_on_start": true
+    },
+    "crash_repros_as_seeds": false
+  },
+  "repro": {
+    "enable": true,
+    "dedicated_vm_count": 1,
+    "vmlinux_path": "/workspace/syzkaller/kernel/build-kasan/vmlinux",
+    "addr2line_binary": "addr2line",
+    "queue_capacity": 64,
+    "execute_timeout_ms": 30000
+  },
+  "phase0_worker_bin": "/workspace/talaria/build-llvm20/executor/channel/worker/ivshmem_worker",
+  "phase0_vm_id": 0,
+  "phase1_run_limit_mode": "task_count",
+  "phase1_runtime_seconds": 30000000,
+  "phase1_total_tasks": 100000000
+}
