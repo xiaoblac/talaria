@@ -1,0 +1,85 @@
+# Talaria Evaluation Dataset
+
+This dataset contains the data for the four experiments reported in
+*Talaria: Accelerating Kernel Fuzzing through Efficient Test Execution*:
+
+1. **RQ1: Execution efficiency** - request-path wall time, CPU time, queueing,
+   and program throughput.
+2. **RQ2: Resource efficiency** - full-guest CPU accounting, kernel profiles,
+   and per-program/per-second resource usage.
+3. **RQ3: Coverage progress** - PC and branch coverage measured during 24-hour
+   campaigns on Linux v6.12, v6.18, and v7.1.
+4. **RQ4: Bug discovery** - crash artifacts from eight independent 48-hour
+   campaigns on Linux v7.1.
+
+The four experiments are distributed as four self-contained archives:
+
+| Archive | Experiments | Contents |
+|---|---|---|
+| `talaria-rq1-execution.tar.zst` | RQ1 | Request streams, wall-time records, queueing data, throughput data, and RQ1 reports |
+| `talaria-rq2-resource.tar.zst` | RQ2 | Shared request streams and timing records plus guest CPU accounting, statistics, kernel profiles, and RQ2 reports |
+| `talaria-rq3-coverage.tar.zst` | RQ3 | Coverage curves, coverage sets, PC differences, and summaries |
+| `talaria-rq4-bug.tar.zst` | RQ4 | Talaria and Syzkaller crash artifacts |
+
+## RQ1 and RQ2 performance data
+
+RQ1 and RQ2 use the same measured runs under:
+
+- `e2-replay/`
+- `e3-scale/`
+- `e3scale-matrix/`
+- `reports/`
+
+Both archives contain the two ordered request streams consumed by the experiments
+(`syz-a` and `rfz-a`) and the shared timing records needed to reproduce their
+respective metrics. Shared run data is intentionally duplicated so that each
+experiment archive is self-contained.
+
+The RQ1 archive focuses on execution timing, queueing, completion, and
+throughput data. The RQ2 archive additionally includes the guest probe data
+(`probe/gp.data`, symbol maps, `/proc/stat` snapshots, CPU attribution, and
+kernel profile reports).
+
+Each run records its code identity in `RUN.json`. The twelve
+`e3scale-matrix` runs use the code identity in `CODEVER.json`. Measurement
+inputs include `host_events.txt`, `worker.log`, `syz_task_trace.jsonl`,
+`syz_perf_serial.log`, and the guest probe data. The archive intentionally
+excludes the early `_superseded/` collection runs and legacy prototypes,
+unused request streams, duplicate copies of `request_stream.bin`, and runtime
+work directories. `STREAM.json` records the authoritative stream identity and
+SHA-256 digest.
+
+## RQ3 coverage data
+
+The coverage archive contains the final coverage artifacts for nine 24-hour
+paired campaigns:
+
+- Linux v6.12: runs r1-r3
+- Linux v6.18: runs r1-r3
+- Linux v7.1: runs r1-r3
+
+For each campaign it includes PC and branch coverage curves, edge counts,
+final PC sets and set differences, coverage hashes, run configuration,
+summaries, and the aggregate figures in `figures/`. Raw VM logs, runtime work
+directories, corpus databases, and duplicated `rfz-data/` runtime trees are
+not included.
+
+## RQ4 bug data
+
+The bug archive contains the crash artifacts from eight independent 48-hour
+campaigns on Linux v7.1:
+
+- `refuzz/`: 84 Talaria `kernel_crash` artifact directories.
+- `syzkaller/`: 88 Syzkaller crash directories.
+
+Talaria artifacts include metadata, reports, the crashing program, output,
+execution history, the console tail, and the symbolized report. Syzkaller
+artifacts include the description, reports, machine information, and title
+statistics. Whole-run logs and Syzkaller per-reproduction `logN` files are not
+included.
+
+## Integrity
+
+`SHA256SUMS` next to the four archives records the archive checksums. Paths
+inside each archive are rooted at the archive name without the `.tar.zst`
+suffix, for example `talaria-rq1-execution/` and `talaria-rq4-bug/`.
