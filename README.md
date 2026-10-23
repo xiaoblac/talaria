@@ -21,6 +21,20 @@ The four experiments are distributed as four self-contained archives:
 | `talaria-rq3-coverage.tar.zst` | RQ3 | Coverage curves, coverage sets, PC differences, and summaries |
 | `talaria-rq4-bug.tar.zst` | RQ4 | Talaria and Syzkaller crash artifacts |
 
+RQ1 and RQ2 are distributed as 50 MiB upload parts because the source connection
+cannot sustain a single multi-gigabyte upload. The logical data packages remain
+the four archives above. Reassemble the two large archives before extraction:
+
+```bash
+cat talaria-rq1-execution.tar.zst.part-* > talaria-rq1-execution.tar.zst
+cat talaria-rq2-resource.tar.zst.part-* > talaria-rq2-resource.tar.zst
+sha256sum -c SHA256SUMS
+sha256sum -c SHA256SUMS.parts
+```
+
+Part files use zero-padded numeric suffixes (`part-00`, `part-01`, ...), so the
+lexicographic `part-*` order is the correct concatenation order.
+
 ## RQ1 and RQ2 performance data
 
 RQ1 and RQ2 use the same measured runs under:
@@ -80,6 +94,7 @@ included.
 
 ## Integrity
 
-`SHA256SUMS` next to the four archives records the archive checksums. Paths
-inside each archive are rooted at the archive name without the `.tar.zst`
-suffix, for example `talaria-rq1-execution/` and `talaria-rq4-bug/`.
+`SHA256SUMS` records the four complete archive checksums.
+`SHA256SUMS.parts` records the upload-part checksums. Paths inside each archive
+are rooted at the archive name without the `.tar.zst` suffix, for example
+`talaria-rq1-execution/` and `talaria-rq4-bug/`.
