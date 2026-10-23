@@ -23,17 +23,61 @@ The four experiments are distributed as four self-contained archives:
 
 RQ1 and RQ2 are distributed as 50 MiB upload parts because the source connection
 cannot sustain a single multi-gigabyte upload. The logical data packages remain
-the four archives above. Reassemble the two large archives before extraction:
+the four archives above.
+
+### Reassemble, verify, and extract
+
+Download the release assets into one directory and reassemble the two large
+archives before extraction:
 
 ```bash
 cat talaria-rq1-execution.tar.zst.part-* > talaria-rq1-execution.tar.zst
 cat talaria-rq2-resource.tar.zst.part-* > talaria-rq2-resource.tar.zst
 sha256sum -c SHA256SUMS
 sha256sum -c SHA256SUMS.parts
+
+tar --zstd -xf talaria-rq1-execution.tar.zst
+tar --zstd -xf talaria-rq2-resource.tar.zst
+tar --zstd -xf talaria-rq3-coverage.tar.zst
+tar --zstd -xf talaria-rq4-bug.tar.zst
 ```
 
 Part files use zero-padded numeric suffixes (`part-00`, `part-01`, ...), so the
 lexicographic `part-*` order is the correct concatenation order.
+
+### Create archives and upload parts
+
+The four logical archives can be recreated from their extracted root
+directories with:
+
+```bash
+tar --zstd -cf talaria-rq1-execution.tar.zst talaria-rq1-execution
+tar --zstd -cf talaria-rq2-resource.tar.zst talaria-rq2-resource
+tar --zstd -cf talaria-rq3-coverage.tar.zst talaria-rq3-coverage
+tar --zstd -cf talaria-rq4-bug.tar.zst talaria-rq4-bug
+```
+
+The two large archives were split and checksummed with:
+
+```bash
+mkdir -p parts
+split -b 50M -d -a 2 --numeric-suffixes=0 \
+  talaria-rq1-execution.tar.zst \
+  parts/talaria-rq1-execution.tar.zst.part-
+split -b 50M -d -a 2 --numeric-suffixes=0 \
+  talaria-rq2-resource.tar.zst \
+  parts/talaria-rq2-resource.tar.zst.part-
+
+(cd parts && sha256sum talaria-rq*.part-* > ../SHA256SUMS.parts)
+sha256sum talaria-rq1-execution.tar.zst \
+  talaria-rq2-resource.tar.zst \
+  talaria-rq3-coverage.tar.zst \
+  talaria-rq4-bug.tar.zst > SHA256SUMS
+```
+
+The scripts used for the four data packages select only the RQ1-RQ4 artifacts
+described below and exclude whole-run logs, duplicate request streams, runtime
+work directories, and the early `_superseded/` collection runs.
 
 ## RQ1 and RQ2 performance data
 
